@@ -435,7 +435,7 @@ app.get("/", async (_request, reply) => {
 
       function getStoredSettings() {
         try {
-          const raw = localStorage.getItem("luxefinder-settings");
+          const raw = localStorage.getItem("maisondeux-settings");
           if (!raw) return {};
           const parsed = JSON.parse(raw);
           return parsed && typeof parsed === "object" ? parsed : {};
@@ -613,11 +613,11 @@ app.get("/", async (_request, reply) => {
       });
       saveSettingsBtn.addEventListener("click", function() {
         const next = collectSettingsFromForm();
-        localStorage.setItem("luxefinder-settings", JSON.stringify(next));
+        localStorage.setItem("maisondeux-settings", JSON.stringify(next));
         setStatus("Settings saved for this browser.");
       });
       clearSettingsBtn.addEventListener("click", function() {
-        localStorage.removeItem("luxefinder-settings");
+        localStorage.removeItem("maisondeux-settings");
         applyStoredSettingsToForm();
         setStatus("Settings cleared.");
       });
