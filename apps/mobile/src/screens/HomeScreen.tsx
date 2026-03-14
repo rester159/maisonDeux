@@ -3,7 +3,7 @@ import { Alert, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import * as ImagePicker from "expo-image-picker";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import { startImageUploadSearch, startTextSearch } from "../api";
-import { useLuxeFinderStore } from "../store";
+import { useMaisonDeuxStore } from "../store";
 
 type RootStackParamList = {
   Home: undefined;
@@ -17,7 +17,7 @@ const TRENDING = ["Rolex", "Chanel", "Cartier", "Hermes", "Patek Philippe", "Van
 
 export function HomeScreen({ navigation }: Props) {
   const [textQuery, setTextQuery] = useState("");
-  const { setSearch } = useLuxeFinderStore();
+  const { setSearch } = useMaisonDeuxStore();
 
   async function onTakePhoto() {
     const permission = await ImagePicker.requestCameraPermissionsAsync();
@@ -59,7 +59,7 @@ export function HomeScreen({ navigation }: Props) {
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
-      <Text style={styles.title}>LuxeFinder</Text>
+      <Text style={styles.title}>maisonDeux</Text>
       <Text style={styles.subtitle}>Upload a photo to search everywhere</Text>
       <View style={styles.uploadZone}>
         <Text style={styles.uploadText}>Luxury item image search</Text>

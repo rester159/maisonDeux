@@ -3,7 +3,7 @@ import { ActivityIndicator, FlatList, Pressable, StyleSheet, Text, View } from "
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
 import type { CanonicalListing } from "@luxefinder/shared";
 import { pollSearch } from "../api";
-import { useLuxeFinderStore } from "../store";
+import { useMaisonDeuxStore } from "../store";
 
 type RootStackParamList = {
   Home: undefined;
@@ -16,7 +16,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "Results">;
 const FILTERS = ["All", "Fashion", "Watches", "Jewelry", "Price", "Condition", "Marketplace", "Verified Only"];
 
 export function ResultsScreen({ navigation }: Props) {
-  const { currentSearchId, query, listings, setListings, disclaimer } = useLuxeFinderStore();
+  const { currentSearchId, query, listings, setListings, disclaimer } = useMaisonDeuxStore();
   const [status, setStatus] = useState<"pending" | "completed" | "failed">("pending");
   const [sortMode, setSortMode] = useState<"best" | "low" | "high">("best");
 

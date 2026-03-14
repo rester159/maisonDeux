@@ -1,6 +1,6 @@
-# LuxeFinder v1.0
+# maisonDeux v1.0
 
-LuxeFinder is an image-first luxury resale search engine MVP with:
+maisonDeux is an image-first luxury resale search engine MVP with:
 
 - Fastify + TypeScript API
 - Prisma + PostgreSQL persistent storage

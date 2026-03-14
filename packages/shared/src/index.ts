@@ -66,7 +66,7 @@ export interface CanonicalListing {
 }
 
 export const TRUST_DISCLAIMER =
-  "LuxeFinder is a search aggregator. We do not authenticate items. Always review the source platform's guarantee before purchasing.";
+  "maisonDeux is a search aggregator. We do not authenticate items. Always review the source platform's guarantee before purchasing.";
 
 export function buildSearchQuery(analysis: ImageAnalysis): string {
   const { brand, model_name, category, subcategory, style_keywords } = analysis;

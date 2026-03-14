@@ -126,7 +126,7 @@ app.get("/", async (_request, reply) => {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LuxeFinder</title>
+    <title>maisonDeux</title>
     <style>
       :root {
         --bg: #07040f;
@@ -338,7 +338,7 @@ app.get("/", async (_request, reply) => {
   <body>
     <div class="wrap">
       <section class="hero">
-        <h1>LuxeFinder</h1>
+        <h1>maisonDeux</h1>
         <p>Upload one photo and instantly search luxury resale marketplaces in parallel. Compare trusted listings, condition, and pricing in one gorgeous feed.</p>
 
         <div class="toolbar">
@@ -1003,7 +1003,7 @@ app.get("/api/v1/admin/metrics", async () => {
 const port = Number(process.env.PORT ?? 3000);
 ensureMarketplaceConfigs()
   .then(() => app.listen({ host: "0.0.0.0", port }))
-  .then(() => app.log.info(`LuxeFinder API running on port ${port}`))
+  .then(() => app.log.info(`maisonDeux API running on port ${port}`))
   .catch((error) => {
     app.log.error(error);
     process.exit(1);

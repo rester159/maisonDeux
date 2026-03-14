@@ -1,7 +1,7 @@
 import type { CanonicalListing } from "@luxefinder/shared";
 import { create } from "zustand";
 
-type LuxeFinderState = {
+type MaisonDeuxState = {
   currentSearchId: string | null;
   query: string;
   listings: CanonicalListing[];
@@ -10,7 +10,7 @@ type LuxeFinderState = {
   setListings: (listings: CanonicalListing[], disclaimer: string) => void;
 };
 
-export const useLuxeFinderStore = create<LuxeFinderState>((set) => ({
+export const useMaisonDeuxStore = create<MaisonDeuxState>((set) => ({
   currentSearchId: null,
   query: "",
   listings: [],

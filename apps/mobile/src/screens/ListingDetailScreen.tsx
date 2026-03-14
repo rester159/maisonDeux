@@ -1,6 +1,6 @@
 import { Linking, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 import type { NativeStackScreenProps } from "@react-navigation/native-stack";
-import { useLuxeFinderStore } from "../store";
+import { useMaisonDeuxStore } from "../store";
 
 type RootStackParamList = {
   Home: undefined;
@@ -12,7 +12,7 @@ type Props = NativeStackScreenProps<RootStackParamList, "ListingDetail">;
 
 export function ListingDetailScreen({ route }: Props) {
   const { listingId } = route.params;
-  const listing = useLuxeFinderStore((state) => state.listings.find((item) => item.listing_id === listingId));
+  const listing = useMaisonDeuxStore((state) => state.listings.find((item) => item.listing_id === listingId));
 
   if (!listing) {
     return (

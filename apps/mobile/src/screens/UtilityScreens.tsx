@@ -49,7 +49,7 @@ export function ProfileScreen() {
 
 export function OnboardingScreen() {
   return (
-    <ScreenShell title="Welcome to LuxeFinder">
+    <ScreenShell title="Welcome to maisonDeux">
       <Text>1) Upload one photo.</Text>
       <Text>2) We search every marketplace in parallel.</Text>
       <Text>3) Compare verified listings in one place.</Text>
