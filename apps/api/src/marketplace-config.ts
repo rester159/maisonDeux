@@ -15,16 +15,20 @@ const DEFAULT_MARKETPLACES = [
 ] as const;
 
 export async function ensureMarketplaceConfigs() {
-  const existing = await prisma.marketplaceConfig.count();
-  if (existing > 0) return;
-
-  await prisma.marketplaceConfig.createMany({
-    data: DEFAULT_MARKETPLACES.map((platform) => ({
-      platform,
-      isActive: true,
-      apiType: platform === "ebay" ? "public_rest" : platform === "shopgoodwill" ? "realtime_scrape" : "partner_rest",
-      baseUrl: null,
-      rateLimitPerMinute: platform === "shopgoodwill" ? 20 : 60
-    }))
-  });
+  for (const platform of DEFAULT_MARKETPLACES) {
+    await prisma.marketplaceConfig.upsert({
+      where: { platform },
+      create: {
+        platform,
+        isActive: true,
+        apiType: platform === "ebay" ? "public_rest" : platform === "shopgoodwill" ? "realtime_scrape" : "partner_rest",
+        baseUrl: null,
+        rateLimitPerMinute: platform === "shopgoodwill" ? 20 : 60
+      },
+      update: {
+        apiType: platform === "ebay" ? "public_rest" : platform === "shopgoodwill" ? "realtime_scrape" : "partner_rest",
+        rateLimitPerMinute: platform === "shopgoodwill" ? 20 : 60
+      }
+    });
+  }
 }
