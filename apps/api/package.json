@@ -1,0 +1,44 @@
+{
+  "name": "@luxefinder/api",
+  "version": "1.0.0",
+  "private": true,
+  "main": "dist/server.js",
+  "types": "dist/server.d.ts",
+  "scripts": {
+    "predev": "npm run build -w @luxefinder/shared",
+    "dev": "tsx watch src/server.ts",
+    "dev:worker": "tsx watch src/worker.ts",
+    "prebuild": "npm run build -w @luxefinder/shared",
+    "build": "tsc -p tsconfig.json",
+    "prestart": "npm run build -w @luxefinder/shared",
+    "start": "node dist/server.js",
+    "start:worker": "node dist/worker.js",
+    "test": "tsx --test src/**/*.test.ts",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:push": "prisma db push",
+    "pretypecheck": "npm run build -w @luxefinder/shared",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "echo \"No lint configured for api\""
+  },
+  "dependencies": {
+    "@fastify/cors": "^11.1.0",
+    "@fastify/jwt": "^10.0.0",
+    "@fastify/multipart": "^9.0.3",
+    "@prisma/client": "^6.16.2",
+    "@supabase/supabase-js": "^2.57.4",
+    "@luxefinder/shared": "1.0.0",
+    "bullmq": "^5.58.5",
+    "dotenv": "^17.2.2",
+    "fastify": "^5.6.0",
+    "ioredis": "^5.7.0",
+    "openai": "^5.20.1",
+    "zod": "^4.1.11"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "prisma": "^6.16.2",
+    "tsx": "^4.20.6",
+    "typescript": "^5.9.2"
+  }
+}

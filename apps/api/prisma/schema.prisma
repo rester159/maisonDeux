@@ -1,0 +1,121 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum SearchStatus {
+  pending
+  processing
+  completed
+  failed
+}
+
+model User {
+  id               String        @id @default(uuid())
+  email            String        @unique
+  passwordHash     String?
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
+  subscriptionTier String        @default("free")
+  preferences      Json          @default("{}")
+  searches         Search[]
+  savedSearches    SavedSearch[]
+}
+
+model Search {
+  id               String         @id @default(uuid())
+  userId           String?
+  imageUrl         String?
+  imageMimeType    String?
+  imageBase64      String?
+  queryText        String?
+  imageAnalysis    Json?
+  constructedQuery String?
+  resultCount      Int            @default(0)
+  status           SearchStatus   @default(pending)
+  errorMessage     String?
+  processedAt      DateTime?
+  createdAt        DateTime       @default(now())
+  user             User?          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  results          SearchResult[]
+}
+
+model Listing {
+  id                   String         @id @default(uuid())
+  platform             String
+  platformListingId    String
+  platformListingUrl   String
+  brand                String?
+  category             String?
+  subcategory          String?
+  title                String?
+  description          String?
+  priceUsd             Decimal?       @db.Decimal(10, 2)
+  originalCurrency     String?
+  originalPrice        Decimal?       @db.Decimal(10, 2)
+  condition            String?
+  conditionRaw         String?
+  images               String[]
+  size                 String?
+  color                String?
+  material             String?
+  sellerRating         Decimal?       @db.Decimal(3, 2)
+  sellerSalesCount     Int?
+  sellerVerified       Boolean        @default(false)
+  authenticationStatus String?
+  authenticationBadge  String?
+  listedAt             DateTime?
+  scrapedAt            DateTime       @default(now())
+  isAvailable          Boolean        @default(true)
+  shippingAvailableUs  Boolean?
+  locationCountry      String?
+  platformFeesBuyerPct Decimal?       @db.Decimal(5, 2)
+  trustScore            Int            @default(0)
+  searchResults        SearchResult[]
+
+  @@unique([platform, platformListingId])
+  @@index([brand])
+  @@index([category])
+  @@index([priceUsd])
+  @@index([isAvailable])
+}
+
+model SearchResult {
+  id             String   @id @default(uuid())
+  searchId       String
+  listingId      String
+  relevanceScore Decimal? @db.Decimal(5, 4)
+  rankPosition   Int?
+  createdAt      DateTime @default(now())
+  search         Search   @relation(fields: [searchId], references: [id], onDelete: Cascade)
+  listing        Listing  @relation(fields: [listingId], references: [id], onDelete: Cascade)
+}
+
+model SavedSearch {
+  id                  String    @id @default(uuid())
+  userId              String
+  name                String?
+  queryText           String?
+  imageUrl            String?
+  imageAnalysis       Json?
+  priceAlertThreshold Decimal?  @db.Decimal(10, 2)
+  alertEnabled        Boolean   @default(false)
+  lastAlertedAt       DateTime?
+  createdAt           DateTime  @default(now())
+  user                User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model MarketplaceConfig {
+  id                 String   @id @default(uuid())
+  platform           String   @unique
+  isActive           Boolean  @default(true)
+  apiType            String?
+  baseUrl            String?
+  rateLimitPerMinute Int?
+  lastSuccessfulCall DateTime?
+  errorCount24h      Int      @default(0)
+}
