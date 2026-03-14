@@ -8,6 +8,20 @@ export interface MarketplaceAdapter {
 
 const FX_RATES = { EUR: 0.92, GBP: 0.79, JPY: 149.5, USD: 1 };
 
+async function fetchWithTimeout(
+  url: string,
+  init: RequestInit,
+  timeoutMs: number
+): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 function fromUnknownRecord(value: unknown): Record<string, unknown> {
   if (value && typeof value === "object") return value as Record<string, unknown>;
   return {};
@@ -316,9 +330,134 @@ export class VestiaireAdapter extends PartnerRestAdapter {
   protected readonly buyerFeePct = 15;
 }
 
+type ShopGoodwillItem = {
+  itemId?: number | string;
+  title?: string;
+  imageURL?: string;
+  itemImageURL?: string;
+  currentPrice?: number | string;
+  minimumBid?: number | string;
+  categoryName?: string;
+  sellerName?: string;
+  sellerId?: number | string;
+  endTime?: string;
+  numBids?: number;
+  shippingPrice?: number | string;
+};
+
+type ShopGoodwillSearchResponse = {
+  searchResults?: {
+    items?: ShopGoodwillItem[];
+    itemCount?: number;
+  };
+};
+
+export class ShopGoodwillAdapter implements MarketplaceAdapter {
+  readonly platform = "shopgoodwill";
+  private readonly enabled = (process.env.SHOPGOODWILL_ENABLED ?? "true").toLowerCase() !== "false";
+  private readonly apiRoot = process.env.SHOPGOODWILL_API_ROOT ?? "https://buyerapi.shopgoodwill.com/api";
+
+  async search(query: string, category: ListingCategory): Promise<CanonicalListing[]> {
+    if (!this.enabled) return [];
+
+    const payload = {
+      page: 1,
+      pageSize: 24,
+      sortColumn: "1",
+      sortDescending: "false",
+      searchText: query.replace(/"/g, ""),
+      selectedCategoryIds: "",
+      selectedSellerIds: "",
+      lowPrice: "0",
+      highPrice: "999999",
+      searchBuyNowOnly: "",
+      searchPickupOnly: "false",
+      searchNoPickupOnly: "false",
+      searchOneCentShippingOnly: "false",
+      searchDescriptions: "false",
+      searchClosedAuctions: "false",
+      closedAuctionEndingDate: "1/1/1970",
+      closedAuctionDaysBack: "7",
+      searchCanadaShipping: "false",
+      searchInternationalShippingOnly: "false",
+      useBuyerPrefs: "true",
+      searchUSOnlyShipping: "false",
+      categoryLevelNo: "1",
+      categoryLevel: 1,
+      categoryId: 0,
+      partNumber: "",
+      catIds: ""
+    };
+
+    const response = await fetchWithTimeout(
+      `${this.apiRoot}/Search/ItemListing`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+        },
+        body: JSON.stringify(payload)
+      },
+      9000
+    );
+
+    if (!response.ok) {
+      throw new Error(`shopgoodwill search failed (${response.status})`);
+    }
+
+    const json = (await response.json()) as ShopGoodwillSearchResponse;
+    const items = json.searchResults?.items ?? [];
+    const now = new Date().toISOString();
+
+    return items.map((item): CanonicalListing => {
+      const id = String(item.itemId ?? Math.random().toString(36).slice(2, 10));
+      const originalPrice = asNumber(item.currentPrice, asNumber(item.minimumBid, 0));
+      const title = asString(item.title, `ShopGoodwill item ${id}`);
+      const listing: CanonicalListing = {
+        listing_id: `shopgoodwill-${id}`,
+        platform_listing_id: id,
+        platform: "shopgoodwill",
+        platform_listing_url: `https://shopgoodwill.com/item/${id}`,
+        brand: title.split(" ")[0] ?? "Unknown",
+        category,
+        subcategory: `${category}_item`,
+        title,
+        description: `${title} (ShopGoodwill auction listing)`,
+        price_usd: originalPrice,
+        original_currency: "USD",
+        original_price: originalPrice,
+        condition: "good",
+        condition_raw: "Auction",
+        images: [asString(item.imageURL), asString(item.itemImageURL)].filter(Boolean),
+        size: null,
+        color: null,
+        material: null,
+        seller_rating: null,
+        seller_sales_count: null,
+        seller_verified: false,
+        authentication_status: "unverified",
+        authentication_badge: null,
+        listed_at: asString(item.endTime, now),
+        scraped_at: now,
+        is_available: true,
+        shipping_available_us: true,
+        location_country: "US",
+        platform_fees_buyer_pct: null,
+        trust_score: 0
+      };
+      listing.trust_score = computeTrustScore(listing, listing.price_usd);
+      return listing;
+    });
+  }
+}
+
 export function getTierOneAdapters(ebayToken?: string): MarketplaceAdapter[] {
   return [
     new EbayAdapter(ebayToken),
+    new ShopGoodwillAdapter(),
     new TheRealRealAdapter(),
     new VestiaireAdapter(),
     new Chrono24Adapter(),

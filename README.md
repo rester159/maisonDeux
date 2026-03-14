@@ -69,6 +69,7 @@ LuxeFinder is an image-first luxury resale search engine MVP with:
 ## Marketplace Adapters
 
 - `ebay`: live Browse API with token support (env token or client-credentials token fetch)
+- `shopgoodwill`: realtime unofficial search integration via `buyerapi.shopgoodwill.com/api/Search/ItemListing` (feature-flagged, no scheduled cache)
 - `therealreal`, `vestiaire`, `chrono24`: live partner REST adapter support (with safe fallback to mock)
 - `1stdibs`, `rebag`, `grailed`, `fashionphile`, `watchbox`, `chronext`: mock adapters wired through shared interface
 

@@ -2,6 +2,7 @@ import { prisma } from "./prisma";
 
 const DEFAULT_MARKETPLACES = [
   "ebay",
+  "shopgoodwill",
   "therealreal",
   "vestiaire",
   "chrono24",
@@ -21,9 +22,9 @@ export async function ensureMarketplaceConfigs() {
     data: DEFAULT_MARKETPLACES.map((platform) => ({
       platform,
       isActive: true,
-      apiType: platform === "ebay" ? "public_rest" : "partner_rest",
+      apiType: platform === "ebay" ? "public_rest" : platform === "shopgoodwill" ? "realtime_scrape" : "partner_rest",
       baseUrl: null,
-      rateLimitPerMinute: 60
+      rateLimitPerMinute: platform === "shopgoodwill" ? 20 : 60
     }))
   });
 }

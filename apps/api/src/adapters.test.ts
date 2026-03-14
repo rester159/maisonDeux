@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { Chrono24Adapter, EbayAdapter, TheRealRealAdapter, VestiaireAdapter } from "./adapters";
+import {
+  Chrono24Adapter,
+  EbayAdapter,
+  ShopGoodwillAdapter,
+  TheRealRealAdapter,
+  VestiaireAdapter
+} from "./adapters";
 
 test("EbayAdapter falls back to mock without token", async () => {
   const adapter = new EbayAdapter(undefined);
@@ -64,4 +70,38 @@ test("Partner adapters fallback without keys", async () => {
   if (originalChrono) process.env.CHRONO24_API_KEY = originalChrono;
   if (originalTrr) process.env.THEREALREAL_API_KEY = originalTrr;
   if (originalVest) process.env.VESTIAIRE_API_KEY = originalVest;
+});
+
+test("ShopGoodwillAdapter maps realtime response items", async () => {
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        json: async () => ({
+          searchResults: {
+            itemCount: 1,
+            items: [
+              {
+                itemId: 232420498,
+                title: "Zara Satin High Heel Pumps",
+                currentPrice: 19.99,
+                minimumBid: 19.99,
+                imageURL: "https://cdn.shopgoodwill.com/1.jpg",
+                endTime: "2026-03-20T20:00:00",
+                shippingPrice: 0.01
+              }
+            ]
+          }
+        })
+      }) as Response);
+    const adapter = new ShopGoodwillAdapter();
+    const results = await adapter.search("Zara pumps", "shoes");
+    assert.equal(results.length, 1);
+    assert.equal(results[0].platform, "shopgoodwill");
+    assert.equal(results[0].listing_id, "shopgoodwill-232420498");
+    assert.equal(results[0].price_usd, 19.99);
+  } finally {
+    global.fetch = originalFetch;
+  }
 });
