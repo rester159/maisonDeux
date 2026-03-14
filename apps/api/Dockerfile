@@ -12,7 +12,7 @@ RUN npm ci
 COPY packages/shared ./packages/shared
 COPY apps/api ./apps/api
 
-RUN npm run build -w @luxefinder/shared && npm run build -w @luxefinder/api && npm run prisma:generate -w @luxefinder/api
+RUN npm run prisma:generate -w @luxefinder/api && npm run build -w @luxefinder/shared && npm run build -w @luxefinder/api
 
 EXPOSE 3000
 
