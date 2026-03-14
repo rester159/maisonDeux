@@ -21,9 +21,42 @@ const SIGNUP_SCHEMA = z.object({
 
 const LOGIN_SCHEMA = SIGNUP_SCHEMA;
 
+const RUNTIME_CREDENTIALS_SCHEMA = z
+  .object({
+    ebay: z
+      .object({
+        oauth_token: z.string().min(1).optional()
+      })
+      .optional(),
+    shopgoodwill: z
+      .object({
+        access_token: z.string().min(1).optional(),
+        username: z.string().min(1).optional(),
+        password: z.string().min(1).optional()
+      })
+      .optional(),
+    therealreal: z
+      .object({
+        api_key: z.string().min(1).optional()
+      })
+      .optional(),
+    vestiaire: z
+      .object({
+        api_key: z.string().min(1).optional()
+      })
+      .optional(),
+    chrono24: z
+      .object({
+        api_key: z.string().min(1).optional()
+      })
+      .optional()
+  })
+  .optional();
+
 const IMAGE_SEARCH_SCHEMA = z.object({
   image_url: z.string().url(),
-  user_id: z.string().uuid().optional()
+  user_id: z.string().uuid().optional(),
+  runtime_credentials: RUNTIME_CREDENTIALS_SCHEMA
 });
 
 const TEXT_SEARCH_SCHEMA = z.object({
@@ -31,7 +64,8 @@ const TEXT_SEARCH_SCHEMA = z.object({
   category: z
     .enum(["watch", "jewelry", "bag", "shoes", "apparel", "accessory"])
     .default("accessory"),
-  user_id: z.string().uuid().optional()
+  user_id: z.string().uuid().optional(),
+  runtime_credentials: RUNTIME_CREDENTIALS_SCHEMA
 });
 
 const PREFERENCES_SCHEMA = z.object({
@@ -272,6 +306,30 @@ app.get("/", async (_request, reply) => {
         font-size: 12px;
         color: #d4cde8;
       }
+      .settings {
+        margin-top: 14px;
+        display: none;
+        padding: 12px;
+        background: rgba(12, 8, 22, 0.7);
+        border: 1px solid rgba(255,255,255,0.18);
+        border-radius: 12px;
+      }
+      .settings.open { display: block; }
+      .settings h3 { margin: 0 0 10px; font-size: 15px; }
+      .settings-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        gap: 8px;
+      }
+      .settings input {
+        width: 100%;
+      }
+      .settings-actions {
+        margin-top: 10px;
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
       @media (max-width: 760px) {
         .input-row { grid-template-columns: 1fr; }
       }
@@ -308,6 +366,23 @@ app.get("/", async (_request, reply) => {
             <option value="trust">Sort: Trust Score</option>
           </select>
           <label class="chip"><input id="verifiedOnly" type="checkbox" /> Verified only</label>
+          <button id="settingsToggleBtn" class="secondary" type="button">Marketplace Settings</button>
+        </div>
+        <div id="settingsPanel" class="settings">
+          <h3>Per-user marketplace credentials (saved in your browser)</h3>
+          <div class="settings-grid">
+            <input id="setSgwAccessToken" type="text" placeholder="ShopGoodwill access token (optional)" />
+            <input id="setSgwUsername" type="text" placeholder="ShopGoodwill username (optional)" />
+            <input id="setSgwPassword" type="password" placeholder="ShopGoodwill password (optional)" />
+            <input id="setEbayToken" type="text" placeholder="eBay OAuth token (optional)" />
+            <input id="setChrono24Key" type="text" placeholder="Chrono24 API key (optional)" />
+            <input id="setTrrKey" type="text" placeholder="The RealReal API key (optional)" />
+            <input id="setVestiaireKey" type="text" placeholder="Vestiaire API key (optional)" />
+          </div>
+          <div class="settings-actions">
+            <button id="saveSettingsBtn" type="button">Save Settings</button>
+            <button id="clearSettingsBtn" class="secondary" type="button">Clear Settings</button>
+          </div>
         </div>
 
         <div id="status" class="status">Ready to search.</div>
@@ -336,6 +411,19 @@ app.get("/", async (_request, reply) => {
       const fileInput = document.getElementById("fileInput");
       const sortSelect = document.getElementById("sortMode");
       const verifiedOnly = document.getElementById("verifiedOnly");
+      const settingsPanel = document.getElementById("settingsPanel");
+      const settingsToggleBtn = document.getElementById("settingsToggleBtn");
+      const saveSettingsBtn = document.getElementById("saveSettingsBtn");
+      const clearSettingsBtn = document.getElementById("clearSettingsBtn");
+      const settingsInputs = {
+        sgwAccessToken: document.getElementById("setSgwAccessToken"),
+        sgwUsername: document.getElementById("setSgwUsername"),
+        sgwPassword: document.getElementById("setSgwPassword"),
+        ebayToken: document.getElementById("setEbayToken"),
+        chrono24Key: document.getElementById("setChrono24Key"),
+        trrKey: document.getElementById("setTrrKey"),
+        vestiaireKey: document.getElementById("setVestiaireKey")
+      };
 
       function formatMoney(v) {
         return "$" + Number(v || 0).toLocaleString();
@@ -343,6 +431,57 @@ app.get("/", async (_request, reply) => {
 
       function setStatus(text) {
         statusEl.textContent = text;
+      }
+
+      function getStoredSettings() {
+        try {
+          const raw = localStorage.getItem("luxefinder-settings");
+          if (!raw) return {};
+          const parsed = JSON.parse(raw);
+          return parsed && typeof parsed === "object" ? parsed : {};
+        } catch {
+          return {};
+        }
+      }
+
+      function applyStoredSettingsToForm() {
+        const s = getStoredSettings();
+        settingsInputs.sgwAccessToken.value = s.shopgoodwill_access_token || "";
+        settingsInputs.sgwUsername.value = s.shopgoodwill_username || "";
+        settingsInputs.sgwPassword.value = s.shopgoodwill_password || "";
+        settingsInputs.ebayToken.value = s.ebay_oauth_token || "";
+        settingsInputs.chrono24Key.value = s.chrono24_api_key || "";
+        settingsInputs.trrKey.value = s.therealreal_api_key || "";
+        settingsInputs.vestiaireKey.value = s.vestiaire_api_key || "";
+      }
+
+      function collectSettingsFromForm() {
+        return {
+          shopgoodwill_access_token: (settingsInputs.sgwAccessToken.value || "").trim(),
+          shopgoodwill_username: (settingsInputs.sgwUsername.value || "").trim(),
+          shopgoodwill_password: (settingsInputs.sgwPassword.value || "").trim(),
+          ebay_oauth_token: (settingsInputs.ebayToken.value || "").trim(),
+          chrono24_api_key: (settingsInputs.chrono24Key.value || "").trim(),
+          therealreal_api_key: (settingsInputs.trrKey.value || "").trim(),
+          vestiaire_api_key: (settingsInputs.vestiaireKey.value || "").trim()
+        };
+      }
+
+      function buildRuntimeCredentials() {
+        const s = getStoredSettings();
+        const credentials = {};
+        if (s.ebay_oauth_token) credentials.ebay = { oauth_token: s.ebay_oauth_token };
+        if (s.shopgoodwill_access_token || s.shopgoodwill_username || s.shopgoodwill_password) {
+          credentials.shopgoodwill = {
+            access_token: s.shopgoodwill_access_token || undefined,
+            username: s.shopgoodwill_username || undefined,
+            password: s.shopgoodwill_password || undefined
+          };
+        }
+        if (s.chrono24_api_key) credentials.chrono24 = { api_key: s.chrono24_api_key };
+        if (s.therealreal_api_key) credentials.therealreal = { api_key: s.therealreal_api_key };
+        if (s.vestiaire_api_key) credentials.vestiaire = { api_key: s.vestiaire_api_key };
+        return Object.keys(credentials).length ? credentials : undefined;
       }
 
       function readSortedFilteredResults() {
@@ -422,7 +561,11 @@ app.get("/", async (_request, reply) => {
         const res = await fetch("/api/v1/search/text", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ query_text: q, category: "accessory" })
+          body: JSON.stringify({
+            query_text: q,
+            category: "accessory",
+            runtime_credentials: buildRuntimeCredentials()
+          })
         });
         if (!res.ok) {
           setStatus("Text search failed.");
@@ -441,6 +584,10 @@ app.get("/", async (_request, reply) => {
         }
         const formData = new FormData();
         formData.append("image", file);
+        const runtimeCredentials = buildRuntimeCredentials();
+        if (runtimeCredentials) {
+          formData.append("runtime_credentials", JSON.stringify(runtimeCredentials));
+        }
         setStatus("Uploading image...");
         const res = await fetch("/api/v1/search/image-upload", {
           method: "POST",
@@ -461,8 +608,22 @@ app.get("/", async (_request, reply) => {
       document.getElementById("imageSearchBtn").addEventListener("click", function() {
         void startImageSearch();
       });
+      settingsToggleBtn.addEventListener("click", function() {
+        settingsPanel.classList.toggle("open");
+      });
+      saveSettingsBtn.addEventListener("click", function() {
+        const next = collectSettingsFromForm();
+        localStorage.setItem("luxefinder-settings", JSON.stringify(next));
+        setStatus("Settings saved for this browser.");
+      });
+      clearSettingsBtn.addEventListener("click", function() {
+        localStorage.removeItem("luxefinder-settings");
+        applyStoredSettingsToForm();
+        setStatus("Settings cleared.");
+      });
       sortSelect.addEventListener("change", renderResults);
       verifiedOnly.addEventListener("change", renderResults);
+      applyStoredSettingsToForm();
     </script>
   </body>
 </html>`);
@@ -538,12 +699,28 @@ app.post("/api/v1/search/image-upload", async (request: any, reply) => {
   if (buffer.length > 10 * 1024 * 1024) {
     return reply.code(400).send({ error: "image_too_large" });
   }
+  let runtimeCredentials: Prisma.InputJsonValue | undefined;
+  const runtimeRaw = typeof file.fields?.runtime_credentials?.value === "string"
+    ? file.fields.runtime_credentials.value
+    : undefined;
+  if (runtimeRaw) {
+    let decoded: unknown;
+    try {
+      decoded = JSON.parse(runtimeRaw);
+    } catch {
+      return reply.code(400).send({ error: "invalid_runtime_credentials_json" });
+    }
+    const parsedRuntime = RUNTIME_CREDENTIALS_SCHEMA.safeParse(decoded);
+    if (!parsedRuntime.success) return reply.code(400).send({ error: "invalid_runtime_credentials" });
+    runtimeCredentials = parsedRuntime.data as unknown as Prisma.InputJsonValue;
+  }
 
   const search = await prisma.search.create({
     data: {
       imageUrl: null,
       imageMimeType: mimeType,
       imageBase64: buffer.toString("base64"),
+      runtimeCredentials: runtimeCredentials ?? Prisma.JsonNull,
       status: "pending"
     }
   });
@@ -560,6 +737,10 @@ app.post("/api/v1/search/image", async (request, reply) => {
       imageUrl: parsed.data.image_url,
       imageMimeType: null,
       imageBase64: null,
+      runtimeCredentials:
+        parsed.data.runtime_credentials !== undefined
+          ? (parsed.data.runtime_credentials as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
       status: "pending"
     }
   });
@@ -575,6 +756,10 @@ app.post("/api/v1/search/text", async (request, reply) => {
       userId: parsed.data.user_id ?? null,
       queryText: parsed.data.query_text,
       constructedQuery: parsed.data.query_text,
+      runtimeCredentials:
+        parsed.data.runtime_credentials !== undefined
+          ? (parsed.data.runtime_credentials as unknown as Prisma.InputJsonValue)
+          : Prisma.JsonNull,
       status: "pending"
     }
   });

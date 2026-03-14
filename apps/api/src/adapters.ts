@@ -6,6 +6,14 @@ export interface MarketplaceAdapter {
   search(query: string, analysisCategory: ListingCategory): Promise<CanonicalListing[]>;
 }
 
+export type RuntimeCredentials = {
+  ebay?: { oauth_token?: string };
+  shopgoodwill?: { access_token?: string; username?: string; password?: string };
+  therealreal?: { api_key?: string };
+  vestiaire?: { api_key?: string };
+  chrono24?: { api_key?: string };
+};
+
 const FX_RATES = { EUR: 0.92, GBP: 0.79, JPY: 149.5, USD: 1 };
 
 async function fetchWithTimeout(
@@ -214,7 +222,7 @@ export class EbayAdapter implements MarketplaceAdapter {
 
 abstract class PartnerRestAdapter implements MarketplaceAdapter {
   abstract readonly platform: string;
-  protected abstract readonly apiKey?: string;
+  protected abstract readonly apiKey: string | undefined;
   protected abstract readonly baseUrl: string;
   protected abstract readonly buyerFeePct: number | null;
 
@@ -311,23 +319,38 @@ abstract class PartnerRestAdapter implements MarketplaceAdapter {
 
 export class Chrono24Adapter extends PartnerRestAdapter {
   readonly platform = "chrono24";
-  protected readonly apiKey = process.env.CHRONO24_API_KEY;
+  protected readonly apiKey: string | undefined;
   protected readonly baseUrl = process.env.CHRONO24_BASE_URL ?? "https://api.chrono24.com/v1";
   protected readonly buyerFeePct = null;
+
+  constructor(runtimeApiKey?: string) {
+    super();
+    this.apiKey = runtimeApiKey ?? process.env.CHRONO24_API_KEY;
+  }
 }
 
 export class TheRealRealAdapter extends PartnerRestAdapter {
   readonly platform = "therealreal";
-  protected readonly apiKey = process.env.THEREALREAL_API_KEY;
+  protected readonly apiKey: string | undefined;
   protected readonly baseUrl = process.env.THEREALREAL_BASE_URL ?? "https://api.therealreal.com/v1";
   protected readonly buyerFeePct = null;
+
+  constructor(runtimeApiKey?: string) {
+    super();
+    this.apiKey = runtimeApiKey ?? process.env.THEREALREAL_API_KEY;
+  }
 }
 
 export class VestiaireAdapter extends PartnerRestAdapter {
   readonly platform = "vestiaire";
-  protected readonly apiKey = process.env.VESTIAIRE_API_KEY;
+  protected readonly apiKey: string | undefined;
   protected readonly baseUrl = process.env.VESTIAIRE_BASE_URL ?? "https://api.vestiairecollective.com/v1";
   protected readonly buyerFeePct = 15;
+
+  constructor(runtimeApiKey?: string) {
+    super();
+    this.apiKey = runtimeApiKey ?? process.env.VESTIAIRE_API_KEY;
+  }
 }
 
 type ShopGoodwillItem = {
@@ -356,9 +379,58 @@ export class ShopGoodwillAdapter implements MarketplaceAdapter {
   readonly platform = "shopgoodwill";
   private readonly enabled = (process.env.SHOPGOODWILL_ENABLED ?? "true").toLowerCase() !== "false";
   private readonly apiRoot = process.env.SHOPGOODWILL_API_ROOT ?? "https://buyerapi.shopgoodwill.com/api";
+  private readonly accessToken?: string;
+  private readonly username?: string;
+  private readonly password?: string;
+
+  constructor(credentials?: RuntimeCredentials["shopgoodwill"]) {
+    this.accessToken = credentials?.access_token;
+    this.username = credentials?.username;
+    this.password = credentials?.password;
+  }
+
+  private encryptLoginValue(plaintext: string): string {
+    const { createCipheriv } = require("node:crypto") as typeof import("node:crypto");
+    const key = Buffer.from("6696D2E6F042FEC4D6E3F32AD541143B", "utf8");
+    const iv = Buffer.from("0000000000000000", "utf8");
+    const cipher = createCipheriv("aes-256-cbc", key, iv);
+    const encrypted = Buffer.concat([cipher.update(Buffer.from(plaintext, "utf8")), cipher.final()]);
+    return encodeURIComponent(encrypted.toString("base64"));
+  }
+
+  private async resolveAccessToken(): Promise<string | undefined> {
+    if (this.accessToken) return this.accessToken;
+    if (!this.username || !this.password) return undefined;
+    const body = {
+      browser: "firefox",
+      remember: false,
+      clientIpAddress: "0.0.0.4",
+      appVersion: "00099a1be3bb023ff17d",
+      username: this.encryptLoginValue(this.username),
+      password: this.encryptLoginValue(this.password)
+    };
+    const response = await fetchWithTimeout(
+      `${this.apiRoot}/SignIn/Login`,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Accept: "application/json",
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
+        },
+        body: JSON.stringify(body)
+      },
+      8000
+    );
+    if (!response.ok) return undefined;
+    const json = fromUnknownRecord(await response.json());
+    return asString(json.accessToken) || undefined;
+  }
 
   async search(query: string, category: ListingCategory): Promise<CanonicalListing[]> {
     if (!this.enabled) return [];
+    const accessToken = await this.resolveAccessToken();
 
     const payload = {
       page: 1,
@@ -396,6 +468,7 @@ export class ShopGoodwillAdapter implements MarketplaceAdapter {
         headers: {
           "Content-Type": "application/json",
           Accept: "application/json",
+          ...(accessToken ? { Authorization: `Bearer ${accessToken}` } : {}),
           "User-Agent":
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36"
         },
@@ -454,13 +527,17 @@ export class ShopGoodwillAdapter implements MarketplaceAdapter {
   }
 }
 
-export function getTierOneAdapters(ebayToken?: string): MarketplaceAdapter[] {
+export function getTierOneAdapters(options?: {
+  ebayToken?: string;
+  runtimeCredentials?: RuntimeCredentials;
+}): MarketplaceAdapter[] {
+  const runtime = options?.runtimeCredentials;
   return [
-    new EbayAdapter(ebayToken),
-    new ShopGoodwillAdapter(),
-    new TheRealRealAdapter(),
-    new VestiaireAdapter(),
-    new Chrono24Adapter(),
+    new EbayAdapter(runtime?.ebay?.oauth_token ?? options?.ebayToken),
+    new ShopGoodwillAdapter(runtime?.shopgoodwill),
+    new TheRealRealAdapter(runtime?.therealreal?.api_key),
+    new VestiaireAdapter(runtime?.vestiaire?.api_key),
+    new Chrono24Adapter(runtime?.chrono24?.api_key),
     new MockMarketplaceAdapter("1stdibs"),
     new MockMarketplaceAdapter("rebag"),
     new MockMarketplaceAdapter("grailed"),

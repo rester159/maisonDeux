@@ -1,6 +1,6 @@
 import { Prisma } from "@prisma/client";
 import { buildSearchQuery, computeTrustScore, type CanonicalListing, type ListingCategory } from "@luxefinder/shared";
-import { getTierOneAdapters } from "../adapters";
+import { getTierOneAdapters, type RuntimeCredentials } from "../adapters";
 import { prisma } from "../prisma";
 import { analyzeImage, defaultTextAnalysis } from "./vision";
 import { getEbayAccessToken } from "./ebay-token";
@@ -59,7 +59,8 @@ export async function processSearch(searchId: string): Promise<void> {
 
     const query = search.queryText ?? buildSearchQuery(analysis);
     const ebayToken = await getEbayAccessToken();
-    const adapters = getTierOneAdapters(ebayToken);
+    const runtimeCredentials = (search.runtimeCredentials ?? undefined) as RuntimeCredentials | undefined;
+    const adapters = getTierOneAdapters({ ebayToken, runtimeCredentials });
     const activeConfigs = await prisma.marketplaceConfig.findMany({
       where: { isActive: true },
       select: { platform: true, rateLimitPerMinute: true }

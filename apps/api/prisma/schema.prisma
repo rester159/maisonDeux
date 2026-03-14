@@ -32,6 +32,7 @@ model Search {
   imageUrl         String?
   imageMimeType    String?
   imageBase64      String?
+  runtimeCredentials Json?
   queryText        String?
   imageAnalysis    Json?
   constructedQuery String?
