@@ -92,28 +92,378 @@ app.get("/", async (_request, reply) => {
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>LuxeFinder Local Launch</title>
+    <title>LuxeFinder</title>
     <style>
-      body { font-family: Arial, sans-serif; margin: 2rem; background: #f8fafc; color: #0f172a; }
-      .card { max-width: 760px; background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 1.25rem; }
-      h1 { margin-top: 0; }
-      a { color: #0f172a; font-weight: 600; text-decoration: none; }
-      ul { line-height: 1.9; }
-      code { background: #f1f5f9; padding: 2px 6px; border-radius: 6px; }
+      :root {
+        --bg: #07040f;
+        --panel: #120a22;
+        --panel-soft: #1b0f30;
+        --text: #f8f6ff;
+        --text-soft: #c8c1de;
+        --accent: #ff4fab;
+        --accent-two: #8f7cff;
+        --good: #22c55e;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        color: var(--text);
+        font-family: Inter, "Segoe UI", Arial, sans-serif;
+        background:
+          radial-gradient(circle at 15% 15%, rgba(255,79,171,0.2), transparent 35%),
+          radial-gradient(circle at 85% 20%, rgba(143,124,255,0.2), transparent 30%),
+          linear-gradient(135deg, #090512 0%, #130a24 50%, #090512 100%);
+      }
+      .wrap {
+        width: min(1200px, 94vw);
+        margin: 24px auto 40px;
+      }
+      .hero {
+        background: linear-gradient(135deg, rgba(255,79,171,0.15), rgba(143,124,255,0.15));
+        border: 1px solid rgba(255,255,255,0.12);
+        border-radius: 20px;
+        padding: 28px;
+        box-shadow: 0 20px 40px rgba(0,0,0,0.28);
+      }
+      .hero h1 {
+        margin: 0;
+        font-size: clamp(32px, 5vw, 56px);
+        line-height: 1.05;
+        letter-spacing: -0.03em;
+      }
+      .hero p {
+        margin-top: 12px;
+        color: var(--text-soft);
+        max-width: 720px;
+        font-size: 16px;
+      }
+      .toolbar {
+        margin-top: 20px;
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 12px;
+      }
+      .input-row {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 10px;
+      }
+      input[type="text"], input[type="file"], select {
+        border: 1px solid rgba(255,255,255,0.16);
+        background: rgba(14, 10, 25, 0.8);
+        color: var(--text);
+        border-radius: 12px;
+        padding: 12px 14px;
+        font-size: 15px;
+      }
+      button {
+        border: none;
+        background: linear-gradient(135deg, var(--accent), var(--accent-two));
+        color: white;
+        border-radius: 12px;
+        padding: 12px 16px;
+        cursor: pointer;
+        font-weight: 700;
+      }
+      button.secondary {
+        background: rgba(255,255,255,0.09);
+        border: 1px solid rgba(255,255,255,0.18);
+      }
+      .meta {
+        margin-top: 14px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        color: var(--text-soft);
+        font-size: 14px;
+      }
+      .chip {
+        padding: 8px 10px;
+        border-radius: 999px;
+        background: rgba(255,255,255,0.08);
+        border: 1px solid rgba(255,255,255,0.15);
+      }
+      .controls {
+        margin-top: 18px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+      .grid {
+        margin-top: 24px;
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+        gap: 14px;
+      }
+      .listing {
+        background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
+        border: 1px solid rgba(255,255,255,0.16);
+        border-radius: 16px;
+        overflow: hidden;
+      }
+      .listing img {
+        width: 100%;
+        height: 220px;
+        object-fit: cover;
+        background: rgba(255,255,255,0.1);
+      }
+      .listing .body {
+        padding: 12px;
+      }
+      .row {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+      }
+      .platform {
+        font-size: 11px;
+        letter-spacing: 0.08em;
+        color: #ffd8ef;
+        text-transform: uppercase;
+      }
+      .price {
+        font-weight: 800;
+        font-size: 20px;
+      }
+      .title {
+        margin-top: 8px;
+        font-weight: 600;
+        line-height: 1.35;
+        min-height: 42px;
+      }
+      .sub {
+        margin-top: 8px;
+        color: var(--text-soft);
+        font-size: 13px;
+      }
+      .trust {
+        margin-top: 10px;
+        font-size: 12px;
+        color: #d7ffe5;
+      }
+      .footer-link {
+        margin-top: 12px;
+        display: inline-block;
+        color: white;
+        text-decoration: none;
+        font-size: 13px;
+        font-weight: 700;
+        background: rgba(255,255,255,0.1);
+        border: 1px solid rgba(255,255,255,0.15);
+        border-radius: 10px;
+        padding: 8px 10px;
+      }
+      .status {
+        margin-top: 14px;
+        font-size: 14px;
+        color: #ffe7ff;
+      }
+      .empty {
+        margin-top: 18px;
+        color: var(--text-soft);
+        border: 1px dashed rgba(255,255,255,0.2);
+        border-radius: 14px;
+        padding: 18px;
+      }
+      .disclaimer {
+        margin-top: 20px;
+        font-size: 12px;
+        color: #d4cde8;
+      }
+      @media (max-width: 760px) {
+        .input-row { grid-template-columns: 1fr; }
+      }
     </style>
   </head>
   <body>
-    <div class="card">
-      <h1>LuxeFinder Local</h1>
-      <p>API is running. Use these links to verify services and launch local testing.</p>
-      <ul>
-        <li><a href="/healthz">Health Check</a> - <code>/healthz</code></li>
-        <li><a href="/readyz">Readiness Check</a> - <code>/readyz</code></li>
-        <li><a href="/api/v1/admin/metrics">Runtime Metrics</a> - <code>/api/v1/admin/metrics</code></li>
-        <li><a href="/api/v1/admin/worker-status">Worker Status</a> - <code>/api/v1/admin/worker-status</code></li>
-      </ul>
-      <p>Mobile app launch is via Expo: run <code>npm run dev:mobile</code> and open the Expo link/QR from terminal.</p>
+    <div class="wrap">
+      <section class="hero">
+        <h1>LuxeFinder</h1>
+        <p>Upload one photo and instantly search luxury resale marketplaces in parallel. Compare trusted listings, condition, and pricing in one gorgeous feed.</p>
+
+        <div class="toolbar">
+          <div class="input-row">
+            <input id="textQuery" type="text" placeholder="Try: Rolex Submariner, Chanel Flap, Cartier Love..." />
+            <button id="textSearchBtn">Search by Text</button>
+          </div>
+          <div class="input-row">
+            <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic" />
+            <button id="imageSearchBtn" class="secondary">Search by Image</button>
+          </div>
+        </div>
+
+        <div class="meta">
+          <span class="chip">Fashion, Bags, Watches, Jewelry</span>
+          <span class="chip">10 Marketplace Connectors</span>
+          <span class="chip">Image-first discovery</span>
+        </div>
+
+        <div class="controls">
+          <select id="sortMode">
+            <option value="best">Sort: Best Match</option>
+            <option value="low">Sort: Price Low to High</option>
+            <option value="high">Sort: Price High to Low</option>
+            <option value="trust">Sort: Trust Score</option>
+          </select>
+          <label class="chip"><input id="verifiedOnly" type="checkbox" /> Verified only</label>
+        </div>
+
+        <div id="status" class="status">Ready to search.</div>
+        <div id="metaLine" class="status"></div>
+      </section>
+
+      <section id="resultsGrid" class="grid"></section>
+      <div id="emptyState" class="empty">No results yet. Start with image upload or text search above.</div>
+      <div id="disclaimer" class="disclaimer"></div>
     </div>
+
+    <script>
+      const state = {
+        searchId: null,
+        results: [],
+        disclaimer: "",
+        pollingTimer: null
+      };
+
+      const statusEl = document.getElementById("status");
+      const metaLineEl = document.getElementById("metaLine");
+      const gridEl = document.getElementById("resultsGrid");
+      const emptyEl = document.getElementById("emptyState");
+      const disclaimerEl = document.getElementById("disclaimer");
+      const textInput = document.getElementById("textQuery");
+      const fileInput = document.getElementById("fileInput");
+      const sortSelect = document.getElementById("sortMode");
+      const verifiedOnly = document.getElementById("verifiedOnly");
+
+      function formatMoney(v) {
+        return "$" + Number(v || 0).toLocaleString();
+      }
+
+      function setStatus(text) {
+        statusEl.textContent = text;
+      }
+
+      function readSortedFilteredResults() {
+        let items = state.results.slice();
+        if (verifiedOnly.checked) {
+          items = items.filter(function(r) {
+            return r.authentication_status === "platform_authenticated";
+          });
+        }
+        const mode = sortSelect.value;
+        if (mode === "low") items.sort(function(a,b){ return a.price_usd - b.price_usd; });
+        if (mode === "high") items.sort(function(a,b){ return b.price_usd - a.price_usd; });
+        if (mode === "trust") items.sort(function(a,b){ return b.trust_score - a.trust_score; });
+        return items;
+      }
+
+      function renderResults() {
+        const items = readSortedFilteredResults();
+        gridEl.innerHTML = "";
+        if (!items.length) {
+          emptyEl.style.display = "block";
+          return;
+        }
+        emptyEl.style.display = "none";
+        items.forEach(function(item) {
+          const card = document.createElement("article");
+          card.className = "listing";
+          const image = item.images && item.images.length ? item.images[0] : "";
+          card.innerHTML =
+            '<img src="' + image + '" alt="' + (item.title || "listing") + '">' +
+            '<div class="body">' +
+              '<div class="row"><span class="platform">' + item.platform + '</span><span class="price">' + formatMoney(item.price_usd) + '</span></div>' +
+              '<div class="title">' + (item.title || "") + '</div>' +
+              '<div class="sub">' + (item.condition || "unknown") + ' • ' + (item.brand || "") + '</div>' +
+              '<div class="trust">Trust: ' + (item.trust_score || 0) + '/100</div>' +
+              '<a class="footer-link" href="' + item.platform_listing_url + '" target="_blank" rel="noopener noreferrer">View on ' + item.platform + '</a>' +
+            '</div>';
+          gridEl.appendChild(card);
+        });
+      }
+
+      async function pollSearch(searchId) {
+        if (state.pollingTimer) {
+          clearInterval(state.pollingTimer);
+          state.pollingTimer = null;
+        }
+        state.pollingTimer = setInterval(async function() {
+          try {
+            const res = await fetch("/api/v1/search/" + searchId);
+            if (!res.ok) return;
+            const data = await res.json();
+            state.results = (data.results || []).map(function(entry) { return entry.listing; }).filter(Boolean);
+            state.disclaimer = data.disclaimer || "";
+            metaLineEl.textContent = String(state.results.length) + " listings • status: " + data.search.status;
+            disclaimerEl.textContent = state.disclaimer;
+            renderResults();
+            if (data.search.status === "completed" || data.search.status === "failed") {
+              setStatus(data.search.status === "completed" ? "Search completed." : "Search failed.");
+              clearInterval(state.pollingTimer);
+              state.pollingTimer = null;
+            } else {
+              setStatus("Searching marketplaces...");
+            }
+          } catch (e) {
+            setStatus("Polling error. Try again.");
+          }
+        }, 1500);
+      }
+
+      async function startTextSearch() {
+        const q = (textInput.value || "").trim();
+        if (!q) {
+          setStatus("Enter a text query first.");
+          return;
+        }
+        setStatus("Starting text search...");
+        const res = await fetch("/api/v1/search/text", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ query_text: q, category: "accessory" })
+        });
+        if (!res.ok) {
+          setStatus("Text search failed.");
+          return;
+        }
+        const data = await res.json();
+        state.searchId = data.search_id;
+        await pollSearch(state.searchId);
+      }
+
+      async function startImageSearch() {
+        const file = fileInput.files && fileInput.files[0];
+        if (!file) {
+          setStatus("Choose an image file first.");
+          return;
+        }
+        const formData = new FormData();
+        formData.append("image", file);
+        setStatus("Uploading image...");
+        const res = await fetch("/api/v1/search/image-upload", {
+          method: "POST",
+          body: formData
+        });
+        if (!res.ok) {
+          setStatus("Image upload/search failed.");
+          return;
+        }
+        const data = await res.json();
+        state.searchId = data.search_id;
+        await pollSearch(state.searchId);
+      }
+
+      document.getElementById("textSearchBtn").addEventListener("click", function() {
+        void startTextSearch();
+      });
+      document.getElementById("imageSearchBtn").addEventListener("click", function() {
+        void startImageSearch();
+      });
+      sortSelect.addEventListener("change", renderResults);
+      verifiedOnly.addEventListener("change", renderResults);
+    </script>
   </body>
 </html>`);
 });
