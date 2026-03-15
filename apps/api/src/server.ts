@@ -164,9 +164,6 @@ if (HAS_REACT_WEB) {
 }
 
 app.get("/", async (_request, reply) => {
-  if (HAS_REACT_WEB) {
-    return reply.redirect("/web/");
-  }
   return reply
     .type("text/html; charset=utf-8")
     .send(`<!doctype html>
