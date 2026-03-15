@@ -192,6 +192,7 @@ export function App() {
   const [expandedRows, setExpandedRows] = useState<RowState>({ exact: false, brand: false, different: false });
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<StoredSettings>(() => getStoredSettings());
+  const [searchInProgress, setSearchInProgress] = useState(false);
   const pollTimer = useRef<number | null>(null);
 
   useEffect(() => {
@@ -234,11 +235,15 @@ export function App() {
           setStatus(search.status === "completed" ? "Search completed." : "Search failed.");
           if (pollTimer.current) window.clearInterval(pollTimer.current);
           pollTimer.current = null;
+          setSearchInProgress(false);
         } else {
           setStatus("Searching marketplaces...");
         }
       } catch {
         setStatus("Polling error. Try again.");
+        if (pollTimer.current) window.clearInterval(pollTimer.current);
+        pollTimer.current = null;
+        setSearchInProgress(false);
       }
     }, 1500);
   }
@@ -253,22 +258,34 @@ export function App() {
     setAnalysis(null);
     setDetectedLine("");
     setStatus("Starting text search...");
-    const response = await fetch("/api/v1/search/text", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query_text: q,
-        category: "accessory",
-        runtime_credentials: buildRuntimeCredentials(settings)
-      })
-    });
-    if (!response.ok) {
-      setStatus("Text search failed.");
-      return;
+    setSearchInProgress(true);
+    try {
+      const response = await fetch("/api/v1/search/text", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query_text: q,
+          category: "accessory",
+          runtime_credentials: buildRuntimeCredentials(settings)
+        })
+      });
+      if (!response.ok) {
+        setStatus("Text search failed.");
+        setSearchInProgress(false);
+        return;
+      }
+      const data = (await response.json()) as { search_id?: string };
+      if (!data.search_id) {
+        setStatus("Text search failed.");
+        setSearchInProgress(false);
+        return;
+      }
+      setSearchId(data.search_id);
+      await pollSearch(data.search_id);
+    } catch {
+      setStatus("Network or server error. Try again.");
+      setSearchInProgress(false);
     }
-    const data = (await response.json()) as { search_id: string };
-    setSearchId(data.search_id);
-    await pollSearch(data.search_id);
   }
 
   async function startImageSearch(): Promise<void> {
@@ -280,20 +297,32 @@ export function App() {
     setAnalysis(null);
     setDetectedLine("");
     setStatus("Uploading image...");
-    const formData = new FormData();
-    const trimmedSize = sizeText.trim();
-    if (trimmedSize) formData.append("size_text", trimmedSize);
-    const runtimeCredentials = buildRuntimeCredentials(settings);
-    if (runtimeCredentials) formData.append("runtime_credentials", JSON.stringify(runtimeCredentials));
-    formData.append("image", file);
-    const response = await fetch("/api/v1/search/image-upload", { method: "POST", body: formData });
-    if (!response.ok) {
-      setStatus("Image upload/search failed.");
-      return;
+    setSearchInProgress(true);
+    try {
+      const formData = new FormData();
+      const trimmedSize = sizeText.trim();
+      if (trimmedSize) formData.append("size_text", trimmedSize);
+      const runtimeCredentials = buildRuntimeCredentials(settings);
+      if (runtimeCredentials) formData.append("runtime_credentials", JSON.stringify(runtimeCredentials));
+      formData.append("image", file);
+      const response = await fetch("/api/v1/search/image-upload", { method: "POST", body: formData });
+      if (!response.ok) {
+        setStatus("Image upload/search failed.");
+        setSearchInProgress(false);
+        return;
+      }
+      const data = (await response.json()) as { search_id?: string };
+      if (!data.search_id) {
+        setStatus("Image upload/search failed.");
+        setSearchInProgress(false);
+        return;
+      }
+      setSearchId(data.search_id);
+      await pollSearch(data.search_id);
+    } catch {
+      setStatus("Network or server error. Try again.");
+      setSearchInProgress(false);
     }
-    const data = (await response.json()) as { search_id: string };
-    setSearchId(data.search_id);
-    await pollSearch(data.search_id);
   }
 
   function saveSettings(): void {
@@ -370,7 +399,9 @@ export function App() {
               onChange={(event) => setQueryText(event.target.value)}
               placeholder="Try: Rolex Submariner, Chanel Flap, Cartier Love..."
             />
-            <button onClick={() => void startTextSearch()}>Search by Text</button>
+            <button onClick={() => void startTextSearch()} disabled={searchInProgress}>
+              Search by Text
+            </button>
           </div>
           <div className="input-row">
             <input
@@ -378,7 +409,7 @@ export function App() {
               accept="image/jpeg,image/png,image/webp,image/heic"
               onChange={(event) => setFile(event.target.files?.[0] ?? null)}
             />
-            <button className="secondary" onClick={() => void startImageSearch()}>
+            <button className="secondary" onClick={() => void startImageSearch()} disabled={searchInProgress}>
               Search by Image
             </button>
           </div>
