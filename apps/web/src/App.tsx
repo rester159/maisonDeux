@@ -69,6 +69,58 @@ type ListingAttributes = {
   color: string;
   price: number;
 };
+type StandardizedItemFields = {
+  brand: string;
+  model: string;
+  category: string;
+  color: string;
+  size: string;
+  condition: string;
+  verified: boolean;
+  newAtRetail: string;
+};
+const MODEL_STOPWORDS = new Set([
+  "new",
+  "used",
+  "with",
+  "without",
+  "size",
+  "bag",
+  "dress",
+  "watch",
+  "shoes",
+  "shoe",
+  "jacket",
+  "coat",
+  "accessory",
+  "item",
+  "authentic",
+  "vintage",
+  "nwt",
+  "nwot"
+]);
+const COLOR_WORDS = [
+  "black",
+  "white",
+  "red",
+  "blue",
+  "green",
+  "brown",
+  "beige",
+  "tan",
+  "pink",
+  "purple",
+  "yellow",
+  "orange",
+  "gold",
+  "silver",
+  "grey",
+  "gray",
+  "navy",
+  "burgundy",
+  "cream",
+  "ivory"
+];
 
 function extractListingAttributes(item: CanonicalListing): ListingAttributes {
   const brand = item.brand || "Unknown brand";
@@ -78,6 +130,81 @@ function extractListingAttributes(item: CanonicalListing): ListingAttributes {
   const color = item.color || "unknown color";
   const price = Number(item.price_usd || 0);
   return { brand, model, color, price };
+}
+
+function titleCase(value: string): string {
+  return value
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+    .join(" ");
+}
+
+function inferModel(item: CanonicalListing): string {
+  const title = (item.title || "").trim();
+  if (!title) return "Unknown";
+  const brand = normalizeText(item.brand || "");
+  const tokens = title
+    .replace(/[^\w\s-]/g, " ")
+    .split(/\s+/)
+    .map((token) => token.trim())
+    .filter(Boolean)
+    .filter((token) => !brand || !normalizeText(token).includes(brand))
+    .filter((token) => token.length >= 3)
+    .filter((token) => !MODEL_STOPWORDS.has(token.toLowerCase()));
+  if (!tokens.length) return "Unknown";
+  return titleCase(tokens.slice(0, 3).join(" "));
+}
+
+function inferColor(item: CanonicalListing): string {
+  if (item.color) return titleCase(String(item.color));
+  const haystack = normalizeText((item.title || "") + " " + (item.description || ""));
+  const match = COLOR_WORDS.find((color) => haystack.includes(color));
+  return match ? titleCase(match) : "Unknown";
+}
+
+function inferSize(item: CanonicalListing): string {
+  if (item.size && String(item.size).trim()) return String(item.size).trim();
+  const title = String(item.title || "");
+  const sizeMatch =
+    title.match(/\b(?:US|EU|UK)\s?\d{1,2}(?:\.\d)?\b/i) ||
+    title.match(/\bsize\s+([a-z0-9.\-\/]+)\b/i) ||
+    title.match(/\b(XS|S|M|L|XL|XXL)\b/i);
+  if (!sizeMatch) return "Unknown";
+  return (sizeMatch[0] || sizeMatch[1] || "").trim();
+}
+
+function formatCategory(item: CanonicalListing): string {
+  const raw = item.subcategory || item.category || "accessory";
+  return titleCase(String(raw).replace(/_/g, " "));
+}
+
+function formatCondition(item: CanonicalListing): string {
+  if (item.condition_raw && String(item.condition_raw).trim()) return String(item.condition_raw).trim();
+  if (item.condition) return titleCase(String(item.condition).replace(/_/g, " "));
+  return "Unknown";
+}
+
+function formatRetailWithDiscount(item: CanonicalListing): string {
+  const retail = Number(item.estimated_retail_price_usd ?? 0);
+  const price = Number(item.price_usd ?? 0);
+  if (!Number.isFinite(retail) || retail <= 0 || !Number.isFinite(price) || price <= 0) return "Unavailable";
+  const discountPct = Math.round(((retail - price) / retail) * 100);
+  if (discountPct >= 0) return `${formatMoney(retail)} (${discountPct}% off)`;
+  return `${formatMoney(retail)} (${Math.abs(discountPct)}% above)`;
+}
+
+function extractStandardizedItemFields(item: CanonicalListing): StandardizedItemFields {
+  return {
+    brand: item.brand?.trim() || "Unknown",
+    model: inferModel(item),
+    category: formatCategory(item),
+    color: inferColor(item),
+    size: inferSize(item),
+    condition: formatCondition(item),
+    verified: item.authentication_status === "platform_authenticated",
+    newAtRetail: formatRetailWithDiscount(item)
+  };
 }
 
 function hasTokenOverlap(tokensA: string[], tokensB: string[]): boolean {
@@ -406,23 +533,48 @@ export function App() {
                   <span className="price">{formatMoney(item.price_usd)}</span>
                 </div>
                 <div className="title">{item.title || ""}</div>
-                <div className="sub">
-                  {item.condition || "unknown"} • {item.brand || ""}
-                </div>
-                <div className="sub">
-                  {(() => {
-                    const attrs = extractListingAttributes(item);
-                    return `Brand: ${attrs.brand} / Model: ${attrs.model} / Color: ${attrs.color} / Price: ${formatMoney(attrs.price)}`;
-                  })()}
-                </div>
+                {(() => {
+                  const fields = extractStandardizedItemFields(item);
+                  return (
+                    <div className="item-fields">
+                      <div className="field-row">
+                        <span className="field-label">Brand</span>
+                        <span className="field-value">{fields.brand}</span>
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">Model</span>
+                        <span className="field-value">{fields.model}</span>
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">Category</span>
+                        <span className="field-value">{fields.category}</span>
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">Color</span>
+                        <span className="field-value">{fields.color}</span>
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">Size</span>
+                        <span className="field-value">{fields.size}</span>
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">Condition</span>
+                        <span className="field-value">{fields.condition}</span>
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">Verified</span>
+                        <span className={`field-value ${fields.verified ? "verified-yes" : "verified-no"}`}>
+                          {fields.verified ? "✓" : "✕"}
+                        </span>
+                      </div>
+                      <div className="field-row">
+                        <span className="field-label">New at retail</span>
+                        <span className="field-value">{fields.newAtRetail}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
                 <div className="trust">Trust: {item.trust_score || 0}/100</div>
-                <div className="trust">
-                  {item.estimated_retail_price_usd !== null && item.estimated_retail_price_usd !== undefined
-                    ? `New retail: ${formatMoney(item.estimated_retail_price_usd)}${
-                        item.retail_price_source ? ` (${item.retail_price_source})` : ""
-                      }`
-                    : "New retail: unavailable"}
-                </div>
                 <a className="footer-link" href={item.platform_listing_url} target="_blank" rel="noopener noreferrer">
                   View on {item.platform}
                 </a>

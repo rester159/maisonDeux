@@ -209,6 +209,47 @@ button.secondary {
   font-size: 13px;
 }
 
+.item-fields {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  padding: 8px;
+}
+
+.field-row {
+  display: grid;
+  grid-template-columns: 110px 1fr;
+  gap: 8px;
+  align-items: start;
+}
+
+.field-label {
+  color: #d9d0ef;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.field-value {
+  color: #f7f4ff;
+  font-size: 12px;
+  line-height: 1.35;
+  word-break: break-word;
+}
+
+.verified-yes {
+  color: #8dffbf;
+  font-weight: 800;
+}
+
+.verified-no {
+  color: #ffb0b0;
+  font-weight: 800;
+}
+
 .trust {
   margin-top: 10px;
   font-size: 12px;
