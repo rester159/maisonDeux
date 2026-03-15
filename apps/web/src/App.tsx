@@ -663,6 +663,7 @@ export function App() {
         <div className="toolbar">
           <div className="search-inline">
             <input
+              className="query-inline"
               type="text"
               value={queryText}
               onChange={(event) => setQueryText(event.target.value)}
