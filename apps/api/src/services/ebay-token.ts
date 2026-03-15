@@ -12,6 +12,16 @@ function fromEnvToken(): string | null {
   return process.env.EBAY_OAUTH_TOKEN ?? null;
 }
 
+function ebayEnvironment(): "production" | "sandbox" {
+  return String(process.env.EBAY_ENVIRONMENT ?? "production").toLowerCase() === "sandbox"
+    ? "sandbox"
+    : "production";
+}
+
+function ebayIdentityBaseUrl(): string {
+  return ebayEnvironment() === "sandbox" ? "https://api.sandbox.ebay.com" : "https://api.ebay.com";
+}
+
 export async function getEbayAccessToken(): Promise<string | undefined> {
   const envToken = fromEnvToken();
   if (envToken) return envToken;
@@ -30,7 +40,7 @@ export async function getEbayAccessToken(): Promise<string | undefined> {
     scope: "https://api.ebay.com/oauth/api_scope"
   });
 
-  const response = await fetch("https://api.ebay.com/identity/v1/oauth2/token", {
+  const response = await fetch(`${ebayIdentityBaseUrl()}/identity/v1/oauth2/token`, {
     method: "POST",
     headers: {
       Authorization: `Basic ${basic}`,

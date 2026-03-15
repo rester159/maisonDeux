@@ -3,9 +3,12 @@ import Fastify from "fastify";
 import cors from "@fastify/cors";
 import jwt from "@fastify/jwt";
 import multipart from "@fastify/multipart";
+import fastifyStatic from "@fastify/static";
 import { Prisma, type SearchStatus } from "@prisma/client";
 import { z } from "zod";
 import { createHash } from "node:crypto";
+import { existsSync } from "node:fs";
+import { resolve } from "node:path";
 import { TRUST_DISCLAIMER } from "@luxefinder/shared";
 import { ensureMarketplaceConfigs } from "./marketplace-config";
 import { prisma } from "./prisma";
@@ -13,6 +16,8 @@ import { enqueueSearchJob, redisConnection, searchDlq, searchQueue } from "./que
 import { getMetricsSnapshot, getWorkerHeartbeat } from "./services/metrics";
 
 const app = Fastify({ logger: true });
+const WEB_DIST_PATH = resolve(process.cwd(), "apps/web/dist");
+const HAS_REACT_WEB = existsSync(WEB_DIST_PATH);
 
 const SIGNUP_SCHEMA = z.object({
   email: z.string().email(),
@@ -151,8 +156,17 @@ app.register(multipart, {
     files: 1
   }
 });
+if (HAS_REACT_WEB) {
+  app.register(fastifyStatic, {
+    root: WEB_DIST_PATH,
+    prefix: "/web/"
+  });
+}
 
 app.get("/", async (_request, reply) => {
+  if (HAS_REACT_WEB) {
+    return reply.redirect("/web/");
+  }
   return reply
     .type("text/html; charset=utf-8")
     .send(`<!doctype html>
@@ -528,22 +542,17 @@ app.get("/", async (_request, reply) => {
         const brand = analysis.brand || "Unknown brand";
         const model = analysis.model_name || analysis.subcategory || "unknown model";
         const category = analysis.category || "accessory";
-        const lines = [
-          "Detected:",
-          "Brand: " + brand,
-          "Model: " + model,
-          "Category: " + category
-        ];
+        const attributes = ["Brand: " + brand, "Model: " + model, "Category: " + category];
         if (sizeText && String(sizeText).trim()) {
-          lines.push("Size: " + String(sizeText).trim());
+          attributes.push("Size: " + String(sizeText).trim());
         }
         const primaryColor = analysis.color_primary && String(analysis.color_primary).trim();
         const secondaryColor = analysis.color_secondary && String(analysis.color_secondary).trim();
         const colorValue = primaryColor && secondaryColor ? primaryColor + ", " + secondaryColor : primaryColor || secondaryColor;
         if (colorValue) {
-          lines.push("Color: " + colorValue);
+          attributes.push("Color: " + colorValue);
         }
-        el.textContent = lines.join("\\n");
+        el.textContent = "Detected: " + attributes.join(" / ");
       }
 
       function clampPrecision(value) {
@@ -1112,7 +1121,11 @@ app.get("/api/v1/search/:searchId", async (request, reply) => {
       platform_fees_buyer_pct: result.listing.platformFeesBuyerPct
         ? Number(result.listing.platformFeesBuyerPct.toString())
         : null,
-      trust_score: result.listing.trustScore
+      trust_score: result.listing.trustScore,
+      estimated_retail_price_usd: result.listing.estimatedRetailPriceUsd
+        ? Number(result.listing.estimatedRetailPriceUsd.toString())
+        : null,
+      retail_price_source: result.listing.retailPriceSource ?? null
     }
   }));
 

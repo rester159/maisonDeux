@@ -63,6 +63,8 @@ export interface CanonicalListing {
   location_country: string | null;
   platform_fees_buyer_pct: number | null;
   trust_score: number;
+  estimated_retail_price_usd?: number | null;
+  retail_price_source?: string | null;
 }
 
 export const TRUST_DISCLAIMER =

@@ -518,6 +518,16 @@ export class EbayAdapter implements MarketplaceAdapter {
 
   constructor(private readonly oauthToken?: string) {}
 
+  private ebayBaseUrl(): string {
+    return String(process.env.EBAY_ENVIRONMENT ?? "production").toLowerCase() === "sandbox"
+      ? "https://api.sandbox.ebay.com"
+      : "https://api.ebay.com";
+  }
+
+  private ebayMarketplaceId(): string {
+    return process.env.EBAY_MARKETPLACE_ID?.trim() || "EBAY_US";
+  }
+
   async search(query: string, category: ListingCategory): Promise<CanonicalListing[]> {
     if (!this.oauthToken) {
       return [];
@@ -530,10 +540,10 @@ export class EbayAdapter implements MarketplaceAdapter {
       sort: "price"
     });
 
-    const response = await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?${params.toString()}`, {
+    const response = await fetch(`${this.ebayBaseUrl()}/buy/browse/v1/item_summary/search?${params.toString()}`, {
       headers: {
         Authorization: `Bearer ${this.oauthToken}`,
-        "X-EBAY-C-MARKETPLACE-ID": "EBAY_US"
+        "X-EBAY-C-MARKETPLACE-ID": this.ebayMarketplaceId()
       }
     });
 

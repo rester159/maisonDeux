@@ -17,6 +17,7 @@ import {
   identifyBrandModelFromGoogleImage,
   mergeGoogleIdentificationIntoCategory
 } from "./google-image-identification";
+import { enrichListingsWithRetailPrice } from "./retail-price-estimator";
 
 type RankedListing = { listing: CanonicalListing; relevance: number };
 
@@ -311,8 +312,9 @@ export async function processSearch(searchId: string): Promise<void> {
     listings.forEach((listing) => {
       listing.trust_score = computeTrustScore(listing, marketAverage);
     });
+    const enrichedListings = await enrichListingsWithRetailPrice(listings, query);
 
-    const ranked = listings
+    const ranked = enrichedListings
       .map((listing) => ({ listing, relevance: scoreRelevance(query, listing) }))
       .sort((a, b) => b.relevance - a.relevance);
     const isImageSearch = Boolean(search.imageBase64 || search.imageUrl);
@@ -364,7 +366,13 @@ export async function processSearch(searchId: string): Promise<void> {
               entry.listing.platform_fees_buyer_pct !== null
                 ? new Prisma.Decimal(entry.listing.platform_fees_buyer_pct)
                 : null,
-            trustScore: entry.listing.trust_score
+            trustScore: entry.listing.trust_score,
+            estimatedRetailPriceUsd:
+              entry.listing.estimated_retail_price_usd !== null &&
+              entry.listing.estimated_retail_price_usd !== undefined
+                ? new Prisma.Decimal(entry.listing.estimated_retail_price_usd)
+                : null,
+            retailPriceSource: entry.listing.retail_price_source ?? null
           },
           update: {
             platformListingUrl: entry.listing.platform_listing_url,
@@ -397,7 +405,13 @@ export async function processSearch(searchId: string): Promise<void> {
               entry.listing.platform_fees_buyer_pct !== null
                 ? new Prisma.Decimal(entry.listing.platform_fees_buyer_pct)
                 : null,
-            trustScore: entry.listing.trust_score
+            trustScore: entry.listing.trust_score,
+            estimatedRetailPriceUsd:
+              entry.listing.estimated_retail_price_usd !== null &&
+              entry.listing.estimated_retail_price_usd !== undefined
+                ? new Prisma.Decimal(entry.listing.estimated_retail_price_usd)
+                : null,
+            retailPriceSource: entry.listing.retail_price_source ?? null
           }
         });
 

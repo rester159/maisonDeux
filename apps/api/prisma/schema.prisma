@@ -76,6 +76,8 @@ model Listing {
   locationCountry      String?
   platformFeesBuyerPct Decimal?       @db.Decimal(5, 2)
   trustScore            Int            @default(0)
+  estimatedRetailPriceUsd Decimal?     @db.Decimal(10, 2)
+  retailPriceSource      String?
   searchResults        SearchResult[]
 
   @@unique([platform, platformListingId])
