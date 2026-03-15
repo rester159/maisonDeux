@@ -43,6 +43,14 @@ export function resolveSearchPrecision(runtimeCredentials?: RuntimeCredentials):
   return Math.min(100, Math.max(10, Math.round(raw)));
 }
 
+export function resolveSearchSizeText(runtimeCredentials?: RuntimeCredentials): string | null {
+  const raw = runtimeCredentials?.search?.size_text;
+  if (typeof raw !== "string") return null;
+  const normalized = raw.trim().replace(/\s+/g, " ");
+  if (!normalized) return null;
+  return normalized.slice(0, 60);
+}
+
 export function buildQueryCandidates(query: string, precision: number): string[] {
   const clean = query.trim().replace(/\s+/g, " ");
   if (!clean) return [];
@@ -107,9 +115,11 @@ export async function processSearch(searchId: string): Promise<void> {
       ? await analyzeImage(imageInput)
       : defaultTextAnalysis(search.queryText ?? "", search.queryText ? undefined : ("accessory" as ListingCategory));
 
-    const query = search.queryText ?? buildSearchQuery(analysis);
+    const queryBase = search.queryText ?? buildSearchQuery(analysis);
     const ebayToken = await getEbayAccessToken();
     const runtimeCredentials = (search.runtimeCredentials ?? undefined) as RuntimeCredentials | undefined;
+    const sizeText = resolveSearchSizeText(runtimeCredentials);
+    const query = sizeText ? `${queryBase} size ${sizeText}` : queryBase;
     const searchPrecision = resolveSearchPrecision(runtimeCredentials);
     const queryCandidates = buildQueryCandidates(query, searchPrecision);
     const adapters = getTierOneAdapters({ ebayToken, runtimeCredentials });

@@ -52,7 +52,8 @@ const RUNTIME_CREDENTIALS_SCHEMA = z
       .optional(),
     search: z
       .object({
-        precision: z.number().int().min(10).max(100).optional()
+        precision: z.number().int().min(10).max(100).optional(),
+        size_text: z.string().min(1).max(60).optional()
       })
       .optional()
   })
@@ -61,6 +62,7 @@ const RUNTIME_CREDENTIALS_SCHEMA = z
 const IMAGE_SEARCH_SCHEMA = z.object({
   image_url: z.string().url(),
   user_id: z.string().uuid().optional(),
+  size_text: z.string().min(1).max(60).optional(),
   runtime_credentials: RUNTIME_CREDENTIALS_SCHEMA
 });
 
@@ -112,6 +114,22 @@ function authGuard(request: any) {
 
 function serializeStatus(status: SearchStatus): "pending" | "processing" | "completed" | "failed" {
   return status;
+}
+
+function mergeRuntimeCredentials(
+  runtime: z.infer<typeof RUNTIME_CREDENTIALS_SCHEMA> | undefined,
+  sizeTextRaw: string | undefined
+): Prisma.InputJsonValue | Prisma.NullTypes.JsonNull {
+  const sizeText = typeof sizeTextRaw === "string" ? sizeTextRaw.trim().slice(0, 60) : "";
+  const merged = { ...(runtime ?? {}) } as Record<string, unknown>;
+  const search = (merged.search ?? {}) as Record<string, unknown>;
+  if (sizeText) {
+    search.size_text = sizeText;
+    merged.search = search;
+  } else if (Object.keys(search).length > 0) {
+    merged.search = search;
+  }
+  return Object.keys(merged).length > 0 ? (merged as Prisma.InputJsonValue) : Prisma.JsonNull;
 }
 
 app.register(cors, { origin: true });
@@ -355,6 +373,10 @@ app.get("/", async (_request, reply) => {
             <input id="fileInput" type="file" accept="image/jpeg,image/png,image/webp,image/heic" />
             <button id="imageSearchBtn" class="secondary">Search by Image</button>
           </div>
+          <div class="input-row">
+            <input id="sizeText" type="text" placeholder="Optional size text (e.g., US 10, EU 42, Medium)" />
+            <span class="chip">Used to refine image search</span>
+          </div>
         </div>
 
         <div class="meta">
@@ -392,6 +414,7 @@ app.get("/", async (_request, reply) => {
         </div>
 
         <div id="status" class="status">Ready to search.</div>
+        <div id="analysisLine" class="status"></div>
         <div id="metaLine" class="status"></div>
       </section>
 
@@ -415,6 +438,7 @@ app.get("/", async (_request, reply) => {
       const disclaimerEl = document.getElementById("disclaimer");
       const textInput = document.getElementById("textQuery");
       const fileInput = document.getElementById("fileInput");
+      const sizeInput = document.getElementById("sizeText");
       const sortSelect = document.getElementById("sortMode");
       const verifiedOnly = document.getElementById("verifiedOnly");
       const settingsPanel = document.getElementById("settingsPanel");
@@ -438,6 +462,19 @@ app.get("/", async (_request, reply) => {
 
       function setStatus(text) {
         statusEl.textContent = text;
+      }
+
+      function renderImageAnalysis(analysis) {
+        const el = document.getElementById("analysisLine");
+        if (!el) return;
+        if (!analysis || typeof analysis !== "object") {
+          el.textContent = "";
+          return;
+        }
+        const brand = analysis.brand || "Unknown brand";
+        const model = analysis.model_name || analysis.subcategory || "unknown model";
+        const category = analysis.category || "accessory";
+        el.textContent = "Detected: " + brand + " | " + model + " | " + category;
       }
 
       function clampPrecision(value) {
@@ -551,6 +588,7 @@ app.get("/", async (_request, reply) => {
             const data = await res.json();
             state.results = (data.results || []).map(function(entry) { return entry.listing; }).filter(Boolean);
             state.disclaimer = data.disclaimer || "";
+            renderImageAnalysis(data.search && data.search.image_analysis ? data.search.image_analysis : null);
             metaLineEl.textContent = String(state.results.length) + " listings • status: " + data.search.status;
             disclaimerEl.textContent = state.disclaimer;
             renderResults();
@@ -573,6 +611,7 @@ app.get("/", async (_request, reply) => {
           setStatus("Enter a text query first.");
           return;
         }
+        renderImageAnalysis(null);
         setStatus("Starting text search...");
         const res = await fetch("/api/v1/search/text", {
           method: "POST",
@@ -598,8 +637,13 @@ app.get("/", async (_request, reply) => {
           setStatus("Choose an image file first.");
           return;
         }
+        renderImageAnalysis(null);
+        const sizeText = (sizeInput.value || "").trim();
         const formData = new FormData();
         formData.append("image", file);
+        if (sizeText) {
+          formData.append("size_text", sizeText);
+        }
         const runtimeCredentials = buildRuntimeCredentials();
         if (runtimeCredentials) {
           formData.append("runtime_credentials", JSON.stringify(runtimeCredentials));
@@ -715,7 +759,7 @@ app.post("/api/v1/search/image-upload", async (request: any, reply) => {
   if (buffer.length > 10 * 1024 * 1024) {
     return reply.code(400).send({ error: "image_too_large" });
   }
-  let runtimeCredentials: Prisma.InputJsonValue | undefined;
+  let parsedRuntimeCredentials: z.infer<typeof RUNTIME_CREDENTIALS_SCHEMA> | undefined;
   const runtimeRaw = typeof file.fields?.runtime_credentials?.value === "string"
     ? file.fields.runtime_credentials.value
     : undefined;
@@ -728,15 +772,16 @@ app.post("/api/v1/search/image-upload", async (request: any, reply) => {
     }
     const parsedRuntime = RUNTIME_CREDENTIALS_SCHEMA.safeParse(decoded);
     if (!parsedRuntime.success) return reply.code(400).send({ error: "invalid_runtime_credentials" });
-    runtimeCredentials = parsedRuntime.data as unknown as Prisma.InputJsonValue;
+    parsedRuntimeCredentials = parsedRuntime.data;
   }
+  const sizeText = typeof file.fields?.size_text?.value === "string" ? file.fields.size_text.value : undefined;
 
   const search = await prisma.search.create({
     data: {
       imageUrl: null,
       imageMimeType: mimeType,
       imageBase64: buffer.toString("base64"),
-      runtimeCredentials: runtimeCredentials ?? Prisma.JsonNull,
+      runtimeCredentials: mergeRuntimeCredentials(parsedRuntimeCredentials, sizeText),
       status: "pending"
     }
   });
@@ -753,10 +798,7 @@ app.post("/api/v1/search/image", async (request, reply) => {
       imageUrl: parsed.data.image_url,
       imageMimeType: null,
       imageBase64: null,
-      runtimeCredentials:
-        parsed.data.runtime_credentials !== undefined
-          ? (parsed.data.runtime_credentials as unknown as Prisma.InputJsonValue)
-          : Prisma.JsonNull,
+      runtimeCredentials: mergeRuntimeCredentials(parsed.data.runtime_credentials, parsed.data.size_text),
       status: "pending"
     }
   });

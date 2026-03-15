@@ -5,6 +5,7 @@ import {
   buildQueryCandidates,
   getMarketAveragePrice,
   resolveSearchPrecision,
+  resolveSearchSizeText,
   scoreRelevance,
   shouldRetryAdapter
 } from "./search-pipeline";
@@ -76,4 +77,10 @@ test("buildQueryCandidates broadens query at lower precision", () => {
   assert.equal(exact[0], "gucci giglio small tote bag");
   assert.equal(broad.includes("gucci bag"), true);
   assert.equal(broad.includes("gucci"), true);
+});
+
+test("resolveSearchSizeText normalizes and bounds size input", () => {
+  assert.equal(resolveSearchSizeText(undefined), null);
+  assert.equal(resolveSearchSizeText({ search: { size_text: "  42 EU  " } }), "42 EU");
+  assert.equal(resolveSearchSizeText({ search: { size_text: "   " } }), null);
 });
