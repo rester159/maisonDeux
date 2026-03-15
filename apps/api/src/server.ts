@@ -249,9 +249,41 @@ app.get("/", async (_request, reply) => {
       }
       .grid {
         margin-top: 24px;
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .row-section {
+        background: rgba(19, 11, 33, 0.62);
+        border: 1px solid rgba(255,255,255,0.13);
+        border-radius: 16px;
+        padding: 12px;
+      }
+      .row-head {
+        display: flex;
+        justify-content: space-between;
+        gap: 10px;
+        align-items: center;
+        margin-bottom: 10px;
+      }
+      .row-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: #f8f6ff;
+      }
+      .row-grid {
         display: grid;
-        grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
-        gap: 14px;
+        grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+        gap: 12px;
+      }
+      .more-btn {
+        border: 1px solid rgba(255,255,255,0.2);
+        background: rgba(255,255,255,0.09);
+        padding: 8px 10px;
+        border-radius: 10px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #fff;
       }
       .listing {
         background: linear-gradient(180deg, rgba(255,255,255,0.07), rgba(255,255,255,0.03));
@@ -428,7 +460,13 @@ app.get("/", async (_request, reply) => {
         searchId: null,
         results: [],
         disclaimer: "",
-        pollingTimer: null
+        pollingTimer: null,
+        analysis: null,
+        expandedRows: {
+          exact: false,
+          brand: false,
+          different: false
+        }
       };
 
       const statusEl = document.getElementById("status");
@@ -455,6 +493,8 @@ app.get("/", async (_request, reply) => {
         vestiaireKey: document.getElementById("setVestiaireKey"),
         searchPrecision: document.getElementById("setSearchPrecision")
       };
+      const ROW_PREVIEW_COUNT = 4;
+      const ROW_TARGET_COUNT = 6;
 
       function formatMoney(v) {
         return "$" + Number(v || 0).toLocaleString();
@@ -551,6 +591,147 @@ app.get("/", async (_request, reply) => {
         return items;
       }
 
+      function normalizeText(value) {
+        return String(value || "")
+          .toLowerCase()
+          .replace(/[^a-z0-9\\s-]/g, " ")
+          .replace(/\\s+/g, " ")
+          .trim();
+      }
+
+      function tokenize(value) {
+        return normalizeText(value).split(" ").filter(function(t){ return t.length > 1; });
+      }
+
+      function hasTokenOverlap(tokensA, tokensB) {
+        if (!tokensA.length || !tokensB.length) return false;
+        const b = new Set(tokensB);
+        return tokensA.some(function(token){ return b.has(token); });
+      }
+
+      function modelSimilarityScore(item, analysis) {
+        if (!analysis) return 0;
+        const haystack = normalizeText((item.title || "") + " " + (item.subcategory || ""));
+        let score = 0;
+        const model = normalizeText(analysis.model_name || "");
+        const subcategory = normalizeText(analysis.subcategory || "");
+        if (model && haystack.includes(model)) score += 3;
+        if (!model && subcategory && haystack.includes(subcategory)) score += 2;
+        if (model && hasTokenOverlap(tokenize(model), tokenize(haystack))) score += 1;
+        if (subcategory && hasTokenOverlap(tokenize(subcategory), tokenize(haystack))) score += 1;
+        if (analysis.category && item.category === analysis.category) score += 1;
+        return score;
+      }
+
+      function buildRowBuckets(items, analysis) {
+        if (!analysis) {
+          return {
+            exact: items.slice(0, ROW_TARGET_COUNT),
+            brand: items.slice(ROW_TARGET_COUNT, ROW_TARGET_COUNT * 2),
+            different: items.slice(ROW_TARGET_COUNT * 2, ROW_TARGET_COUNT * 3)
+          };
+        }
+
+        const detectedBrand = normalizeText(analysis.brand || "");
+        const remaining = items.slice();
+        const used = new Set();
+        const rows = { exact: [], brand: [], different: [] };
+
+        function takeForRow(rowKey, predicate) {
+          for (let i = 0; i < remaining.length; i += 1) {
+            const item = remaining[i];
+            const id = item.listing_id;
+            if (used.has(id)) continue;
+            if (!predicate(item)) continue;
+            used.add(id);
+            rows[rowKey].push(item);
+            if (rows[rowKey].length >= ROW_TARGET_COUNT) return;
+          }
+        }
+
+        function isExactBrand(item) {
+          if (!detectedBrand) return false;
+          return normalizeText(item.brand || "") === detectedBrand;
+        }
+
+        takeForRow("exact", function(item){ return isExactBrand(item) && modelSimilarityScore(item, analysis) >= 3; });
+        if (rows.exact.length < ROW_TARGET_COUNT) {
+          takeForRow("exact", function(item){ return isExactBrand(item) && modelSimilarityScore(item, analysis) >= 2; });
+        }
+        if (rows.exact.length < ROW_TARGET_COUNT) {
+          takeForRow("exact", function(item){ return isExactBrand(item) && modelSimilarityScore(item, analysis) >= 1; });
+        }
+
+        takeForRow("brand", function(item){ return isExactBrand(item) && modelSimilarityScore(item, analysis) >= 1; });
+        if (rows.brand.length < ROW_TARGET_COUNT) {
+          takeForRow("brand", function(item){ return isExactBrand(item); });
+        }
+
+        takeForRow("different", function(item){ return !isExactBrand(item) && modelSimilarityScore(item, analysis) >= 2; });
+        if (rows.different.length < ROW_TARGET_COUNT) {
+          takeForRow("different", function(item){ return !isExactBrand(item) && modelSimilarityScore(item, analysis) >= 1; });
+        }
+
+        const rowOrder = ["exact", "brand", "different"];
+        for (const key of rowOrder) {
+          if (rows[key].length >= ROW_TARGET_COUNT) continue;
+          takeForRow(key, function(){ return true; });
+        }
+        return rows;
+      }
+
+      function createListingCard(item) {
+        const card = document.createElement("article");
+        card.className = "listing";
+        const image = item.images && item.images.length ? item.images[0] : "";
+        card.innerHTML =
+          '<img src="' + image + '" alt="' + (item.title || "listing") + '">' +
+          '<div class="body">' +
+            '<div class="row"><span class="platform">' + item.platform + '</span><span class="price">' + formatMoney(item.price_usd) + '</span></div>' +
+            '<div class="title">' + (item.title || "") + '</div>' +
+            '<div class="sub">' + (item.condition || "unknown") + ' • ' + (item.brand || "") + '</div>' +
+            '<div class="trust">Trust: ' + (item.trust_score || 0) + '/100</div>' +
+            '<a class="footer-link" href="' + item.platform_listing_url + '" target="_blank" rel="noopener noreferrer">View on ' + item.platform + '</a>' +
+          '</div>';
+        return card;
+      }
+
+      function renderRowSection(sectionKey, title, items) {
+        const section = document.createElement("section");
+        section.className = "row-section";
+
+        const head = document.createElement("div");
+        head.className = "row-head";
+        const titleEl = document.createElement("div");
+        titleEl.className = "row-title";
+        titleEl.textContent = title + " (" + items.length + ")";
+        head.appendChild(titleEl);
+
+        const expanded = Boolean(state.expandedRows[sectionKey]);
+        if (items.length > ROW_PREVIEW_COUNT) {
+          const moreBtn = document.createElement("button");
+          moreBtn.className = "more-btn";
+          moreBtn.type = "button";
+          moreBtn.textContent = expanded ? "Show less" : "More";
+          moreBtn.addEventListener("click", function() {
+            state.expandedRows[sectionKey] = !expanded;
+            renderResults();
+          });
+          head.appendChild(moreBtn);
+        }
+
+        const grid = document.createElement("div");
+        grid.className = "row-grid";
+        const visible = expanded ? items : items.slice(0, ROW_PREVIEW_COUNT);
+        visible.forEach(function(item) {
+          grid.appendChild(createListingCard(item));
+        });
+
+        section.appendChild(head);
+        section.appendChild(grid);
+        return section;
+      }
+
       function renderResults() {
         const items = readSortedFilteredResults();
         gridEl.innerHTML = "";
@@ -559,21 +740,10 @@ app.get("/", async (_request, reply) => {
           return;
         }
         emptyEl.style.display = "none";
-        items.forEach(function(item) {
-          const card = document.createElement("article");
-          card.className = "listing";
-          const image = item.images && item.images.length ? item.images[0] : "";
-          card.innerHTML =
-            '<img src="' + image + '" alt="' + (item.title || "listing") + '">' +
-            '<div class="body">' +
-              '<div class="row"><span class="platform">' + item.platform + '</span><span class="price">' + formatMoney(item.price_usd) + '</span></div>' +
-              '<div class="title">' + (item.title || "") + '</div>' +
-              '<div class="sub">' + (item.condition || "unknown") + ' • ' + (item.brand || "") + '</div>' +
-              '<div class="trust">Trust: ' + (item.trust_score || 0) + '/100</div>' +
-              '<a class="footer-link" href="' + item.platform_listing_url + '" target="_blank" rel="noopener noreferrer">View on ' + item.platform + '</a>' +
-            '</div>';
-          gridEl.appendChild(card);
-        });
+        const buckets = buildRowBuckets(items, state.analysis);
+        gridEl.appendChild(renderRowSection("exact", "Exact brand and model", buckets.exact));
+        gridEl.appendChild(renderRowSection("brand", "Exact brand, similar model", buckets.brand));
+        gridEl.appendChild(renderRowSection("different", "Different brand, similar model", buckets.different));
       }
 
       async function pollSearch(searchId) {
@@ -588,6 +758,7 @@ app.get("/", async (_request, reply) => {
             const data = await res.json();
             state.results = (data.results || []).map(function(entry) { return entry.listing; }).filter(Boolean);
             state.disclaimer = data.disclaimer || "";
+            state.analysis = data.search && data.search.image_analysis ? data.search.image_analysis : null;
             renderImageAnalysis(data.search && data.search.image_analysis ? data.search.image_analysis : null);
             metaLineEl.textContent = String(state.results.length) + " listings • status: " + data.search.status;
             disclaimerEl.textContent = state.disclaimer;
@@ -611,6 +782,8 @@ app.get("/", async (_request, reply) => {
           setStatus("Enter a text query first.");
           return;
         }
+        state.expandedRows = { exact: false, brand: false, different: false };
+        state.analysis = null;
         renderImageAnalysis(null);
         setStatus("Starting text search...");
         const res = await fetch("/api/v1/search/text", {
@@ -637,6 +810,8 @@ app.get("/", async (_request, reply) => {
           setStatus("Choose an image file first.");
           return;
         }
+        state.expandedRows = { exact: false, brand: false, different: false };
+        state.analysis = null;
         renderImageAnalysis(null);
         const sizeText = (sizeInput.value || "").trim();
         const formData = new FormData();

@@ -1,5 +1,11 @@
 import { Prisma } from "@prisma/client";
-import { buildSearchQuery, computeTrustScore, type CanonicalListing, type ListingCategory } from "@luxefinder/shared";
+import {
+  buildSearchQuery,
+  computeTrustScore,
+  type CanonicalListing,
+  type ImageAnalysis,
+  type ListingCategory
+} from "@luxefinder/shared";
 import { getTierOneAdapters, type RuntimeCredentials } from "../adapters";
 import { prisma } from "../prisma";
 import { analyzeImage, defaultTextAnalysis } from "./vision";
@@ -7,6 +13,8 @@ import { getEbayAccessToken } from "./ebay-token";
 import { waitForRateLimitSlot, parseRateLimitWaitMs } from "./rate-limit";
 import { withRetry } from "./retry";
 import { incrementMetric, setGauge } from "./metrics";
+
+type RankedListing = { listing: CanonicalListing; relevance: number };
 
 export function scoreRelevance(query: string, listing: CanonicalListing): number {
   const q = query.toLowerCase();
@@ -93,6 +101,102 @@ export function buildQueryCandidates(query: string, precision: number): string[]
     candidates.add(brand);
   }
   return Array.from(candidates).filter(Boolean).slice(0, 5);
+}
+
+function normalizeText(value: string | null | undefined): string {
+  return (value ?? "")
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function tokenize(value: string | null | undefined): string[] {
+  return normalizeText(value)
+    .split(" ")
+    .map((token) => token.trim())
+    .filter((token) => token.length > 1);
+}
+
+function overlapCount(a: string[], b: string[]): number {
+  if (!a.length || !b.length) return 0;
+  const bSet = new Set(b);
+  return a.reduce((count, token) => count + (bSet.has(token) ? 1 : 0), 0);
+}
+
+function buildImageIntentTokens(analysis: ImageAnalysis): string[] {
+  const ignored = new Set([
+    "luxury",
+    "designer",
+    "resale",
+    "fashion",
+    "item",
+    "unknown",
+    "brand",
+    "model",
+    "accessory",
+    "contemporary"
+  ]);
+  const rawTokens = [
+    ...tokenize(analysis.brand),
+    ...tokenize(analysis.model_name),
+    ...tokenize(analysis.subcategory),
+    ...tokenize(analysis.material),
+    ...tokenize(analysis.color_primary),
+    ...tokenize(analysis.color_secondary),
+    ...(analysis.style_keywords ?? []).flatMap((entry) => tokenize(entry))
+  ];
+  return rawTokens.filter((token) => !ignored.has(token));
+}
+
+function listingSearchText(listing: CanonicalListing): string {
+  return normalizeText(
+    [
+      listing.title,
+      listing.brand,
+      listing.subcategory,
+      listing.description,
+      listing.color,
+      listing.material,
+      listing.category
+    ]
+      .filter(Boolean)
+      .join(" ")
+  );
+}
+
+export function filterRankedListingsForImageSearch(
+  ranked: RankedListing[],
+  analysis: ImageAnalysis,
+  precision: number
+): RankedListing[] {
+  const detectedBrand = normalizeText(analysis.brand);
+  const brandKnown = Boolean(detectedBrand) && detectedBrand !== "unknown brand";
+  const intentTokens = buildImageIntentTokens(analysis);
+  const minRelevance = precision >= 85 ? 0.34 : precision >= 70 ? 0.28 : 0.24;
+  const minOverlap = precision >= 85 ? 2 : 1;
+
+  const filtered = ranked.filter((entry) => {
+    const listingText = listingSearchText(entry.listing);
+    const listingTokens = tokenize(listingText);
+    const overlap = overlapCount(intentTokens, listingTokens);
+    const categoryMatch = entry.listing.category === analysis.category;
+    const exactBrand = brandKnown && normalizeText(entry.listing.brand) === detectedBrand;
+
+    if (brandKnown) {
+      if (exactBrand) {
+        return entry.relevance >= minRelevance || overlap >= 1;
+      }
+      return overlap >= minOverlap + 1 && categoryMatch && entry.relevance >= minRelevance;
+    }
+
+    return overlap >= minOverlap && categoryMatch && entry.relevance >= minRelevance;
+  });
+
+  if (filtered.length >= 4) return filtered;
+
+  // If the image analysis is weak, keep only category-consistent top results rather than unrelated noise.
+  return ranked.filter((entry) => entry.listing.category === analysis.category && entry.relevance >= minRelevance);
 }
 
 export async function processSearch(searchId: string): Promise<void> {
@@ -196,11 +300,15 @@ export async function processSearch(searchId: string): Promise<void> {
     const ranked = listings
       .map((listing) => ({ listing, relevance: scoreRelevance(query, listing) }))
       .sort((a, b) => b.relevance - a.relevance);
+    const isImageSearch = Boolean(search.imageBase64 || search.imageUrl);
+    const finalRanked = isImageSearch
+      ? filterRankedListingsForImageSearch(ranked, analysis, searchPrecision)
+      : ranked;
 
     await prisma.$transaction(async (tx) => {
       await tx.searchResult.deleteMany({ where: { searchId } });
-      for (let i = 0; i < ranked.length; i += 1) {
-        const entry = ranked[i];
+      for (let i = 0; i < finalRanked.length; i += 1) {
+        const entry = finalRanked[i];
         const listing = await tx.listing.upsert({
           where: {
             platform_platformListingId: {
@@ -293,7 +401,7 @@ export async function processSearch(searchId: string): Promise<void> {
         data: {
           imageAnalysis: analysis as unknown as Prisma.InputJsonValue,
           constructedQuery: query,
-          resultCount: ranked.length,
+          resultCount: finalRanked.length,
           status: "completed",
           imageBase64: null,
           processedAt: new Date()

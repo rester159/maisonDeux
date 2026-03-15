@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import type { CanonicalListing } from "@luxefinder/shared";
 import {
   buildQueryCandidates,
+  filterRankedListingsForImageSearch,
   getMarketAveragePrice,
   resolveSearchPrecision,
   resolveSearchSizeText,
@@ -83,4 +84,54 @@ test("resolveSearchSizeText normalizes and bounds size input", () => {
   assert.equal(resolveSearchSizeText(undefined), null);
   assert.equal(resolveSearchSizeText({ search: { size_text: "  42 EU  " } }), "42 EU");
   assert.equal(resolveSearchSizeText({ search: { size_text: "   " } }), null);
+});
+
+test("filterRankedListingsForImageSearch keeps category-relevant items", () => {
+  const ranked = [
+    { listing: listing({ category: "shoes", title: "Gucci Loafers Brown Leather", brand: "Gucci" }), relevance: 0.62 },
+    { listing: listing({ category: "shoes", title: "Mens leather loafers vintage", brand: "Unknown" }), relevance: 0.4 },
+    { listing: listing({ category: "apparel", title: "Phoenix Suns T Shirt", brand: "Pro Standard" }), relevance: 0.35 }
+  ];
+  const filtered = filterRankedListingsForImageSearch(
+    ranked,
+    {
+      brand: null,
+      category: "shoes",
+      subcategory: "loafers",
+      color_primary: "brown",
+      color_secondary: null,
+      material: "leather",
+      style_keywords: ["loafers"],
+      model_name: null,
+      estimated_era: null,
+      confidence: 0.72
+    },
+    75
+  );
+  assert.equal(filtered.some((entry) => entry.listing.category === "apparel"), false);
+  assert.equal(filtered.length >= 1, true);
+});
+
+test("filterRankedListingsForImageSearch prefers exact detected brand", () => {
+  const ranked = [
+    { listing: listing({ category: "shoes", brand: "Gucci", title: "Gucci Brixton Horsebit Loafer" }), relevance: 0.5 },
+    { listing: listing({ category: "shoes", brand: "Prada", title: "Prada Running Sneakers" }), relevance: 0.55 }
+  ];
+  const filtered = filterRankedListingsForImageSearch(
+    ranked,
+    {
+      brand: "Gucci",
+      category: "shoes",
+      subcategory: "loafers",
+      color_primary: null,
+      color_secondary: null,
+      material: null,
+      style_keywords: ["horsebit"],
+      model_name: "Brixton",
+      estimated_era: null,
+      confidence: 0.82
+    },
+    85
+  );
+  assert.equal(filtered.some((entry) => entry.listing.brand === "Gucci"), true);
 });
