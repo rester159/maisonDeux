@@ -237,21 +237,22 @@ function decodeHtmlEntities(text: string): string {
 
 function extractTileRowsFromHtml(html: string): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];
-  const anchorRegex =
-    /<a[^>]*href="([^"]+)"[^>]*data-tn="item-tile-title-anchor"[^>]*>[\s\S]*?<h2[^>]*>([\s\S]*?)<\/h2>/gi;
+  const anchorRegex = /<a[^>]*data-tn="item-tile-title-anchor"[^>]*>[\s\S]*?<h2[^>]*>([\s\S]*?)<\/h2>/gi;
   const seen = new Set<string>();
   let match: RegExpExecArray | null;
   while ((match = anchorRegex.exec(html))) {
-    const href = normalizeUrl(match[1] ?? "");
-    const rawTitle = decodeHtmlEntities((match[2] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+    const anchorTag = match[0] ?? "";
+    const hrefMatch = anchorTag.match(/href="([^"]+)"/i);
+    const href = normalizeUrl(hrefMatch?.[1] ?? "");
+    const rawTitle = decodeHtmlEntities((match[1] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
     if (!href || !rawTitle) continue;
     const key = `${href}|${rawTitle}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    const start = Math.max(0, match.index - 3000);
-    const end = Math.min(html.length, match.index + 3000);
+    const start = Math.max(0, match.index - 12000);
+    const end = Math.min(html.length, match.index + 12000);
     const around = html.slice(start, end);
-    const priceMatch = around.match(/\$([0-9][0-9,]*(?:\.[0-9]{2})?)/);
+    const priceMatch = around.match(/\$\s*([0-9][0-9,]*(?:\.[0-9]{2})?)/);
     const imageMatch = around.match(/<img[^>]+src="([^"]+)"[^>]*>/i);
     const price = priceMatch ? Number(priceMatch[1].replace(/,/g, "")) : NaN;
     const row: Record<string, unknown> = {
