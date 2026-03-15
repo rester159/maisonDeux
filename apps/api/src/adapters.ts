@@ -84,6 +84,77 @@ function normalizeUrl(url: string): string {
   return url;
 }
 
+function absolutizeUrl(url: string, baseUrl: string): string {
+  const normalized = normalizeUrl(url);
+  if (!normalized) return "";
+  if (normalized.startsWith("http://") || normalized.startsWith("https://")) return normalized;
+  if (normalized.startsWith("/")) {
+    try {
+      return new URL(normalized, baseUrl).toString();
+    } catch {
+      return "";
+    }
+  }
+  return normalized;
+}
+
+function readPath(value: unknown, path: string): unknown {
+  const parts = path.split(".");
+  let cursor: unknown = value;
+  for (const part of parts) {
+    if (cursor === null || cursor === undefined) return undefined;
+    if (Array.isArray(cursor)) {
+      const index = Number(part);
+      if (!Number.isInteger(index)) return undefined;
+      cursor = cursor[index];
+      continue;
+    }
+    if (typeof cursor !== "object") return undefined;
+    cursor = (cursor as Record<string, unknown>)[part];
+  }
+  return cursor;
+}
+
+function pickStringByPaths(row: Record<string, unknown>, paths: string[], fallback = ""): string {
+  for (const path of paths) {
+    const value = readPath(row, path);
+    if (typeof value === "string" && value.trim()) return value.trim();
+  }
+  return fallback;
+}
+
+function pickNumberByPaths(row: Record<string, unknown>, paths: string[], fallback = 0): number {
+  for (const path of paths) {
+    const value = readPath(row, path);
+    const parsed = asNumber(value, Number.NaN);
+    if (Number.isFinite(parsed)) return parsed;
+  }
+  return fallback;
+}
+
+function looksLikeListingRow(value: unknown): value is Record<string, unknown> {
+  if (!value || typeof value !== "object") return false;
+  const row = value as Record<string, unknown>;
+  const title = pickStringByPaths(row, ["title", "name", "productName", "item.title", "item.name"]);
+  const url = pickStringByPaths(row, ["url", "href", "productUrl", "product_url", "item.url", "seo.url"]);
+  const price = pickNumberByPaths(
+    row,
+    [
+      "price",
+      "currentPrice",
+      "salePrice",
+      "amount",
+      "price.value",
+      "pricing.price",
+      "offers.price",
+      "item.price",
+      "item.price.value"
+    ],
+    Number.NaN
+  );
+  return Boolean(title) && Number.isFinite(price) && price > 0 && Boolean(url);
+}
+
 function flattenJsonLdProducts(node: unknown): Record<string, unknown>[] {
   const out: Record<string, unknown>[] = [];
   const walk = (value: unknown) => {
@@ -125,6 +196,76 @@ function extractJsonLdProducts(html: string): Record<string, unknown>[] {
     }
   }
   return products;
+}
+
+function parseJsonFromScriptBlock(content: string): unknown | null {
+  const trimmed = content.trim();
+  if (!trimmed) return null;
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // proceed to assignment-style extraction
+  }
+  const assignmentMatches = [
+    trimmed.match(/__NEXT_DATA__\s*=\s*(\{[\s\S]*\})\s*;?/),
+    trimmed.match(/__NUXT__\s*=\s*(\{[\s\S]*\})\s*;?/),
+    trimmed.match(/__INITIAL_STATE__\s*=\s*(\{[\s\S]*\})\s*;?/),
+    trimmed.match(/window\.__PRELOADED_STATE__\s*=\s*(\{[\s\S]*\})\s*;?/)
+  ];
+  for (const match of assignmentMatches) {
+    const raw = match?.[1];
+    if (!raw) continue;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      continue;
+    }
+  }
+  return null;
+}
+
+function extractHeuristicRowsFromScripts(html: string): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+  const scripts = [...html.matchAll(/<script([^>]*)>([\s\S]*?)<\/script>/gi)];
+  const seen = new Set<string>();
+  for (const match of scripts) {
+    const attrs = (match[1] ?? "").toLowerCase();
+    const content = match[2] ?? "";
+    const maybeJsonScript =
+      attrs.includes("application/json") ||
+      attrs.includes("application/ld+json") ||
+      attrs.includes("__next_data__") ||
+      content.includes("__NEXT_DATA__") ||
+      content.includes("__NUXT__") ||
+      content.includes("__INITIAL_STATE__");
+    if (!maybeJsonScript) continue;
+    const parsed = parseJsonFromScriptBlock(content);
+    if (!parsed) continue;
+
+    const walk = (value: unknown, depth = 0) => {
+      if (depth > 9 || value === null || value === undefined) return;
+      if (Array.isArray(value)) {
+        value.forEach((entry) => walk(entry, depth + 1));
+        return;
+      }
+      if (typeof value !== "object") return;
+      const row = value as Record<string, unknown>;
+      if (looksLikeListingRow(row)) {
+        const key =
+          pickStringByPaths(row, ["id", "sku", "productId", "slug", "url"], "") ||
+          JSON.stringify([row.title, row.name, row.price, row.currentPrice]);
+        if (!seen.has(key)) {
+          seen.add(key);
+          rows.push(row);
+        }
+      }
+      for (const child of Object.values(row)) {
+        walk(child, depth + 1);
+      }
+    };
+    walk(parsed, 0);
+  }
+  return rows;
 }
 
 function createMockListing(
@@ -239,7 +380,8 @@ export class ScrapedMarketplaceAdapter implements MarketplaceAdapter {
   private mapScrapedProduct(
     row: Record<string, unknown>,
     query: string,
-    category: ListingCategory
+    category: ListingCategory,
+    baseUrl: string
   ): CanonicalListing | null {
     const now = new Date().toISOString();
     const offersRaw = Array.isArray(row.offers) ? row.offers[0] : row.offers;
@@ -251,32 +393,52 @@ export class ScrapedMarketplaceAdapter implements MarketplaceAdapter {
         : Array.isArray(imageRaw)
           ? normalizeUrl(asString(imageRaw[0]))
           : normalizeUrl(asString(fromUnknownRecord(imageRaw).url));
-    const listingUrl = normalizeUrl(asString(row.url));
+    const listingUrl = absolutizeUrl(
+      pickStringByPaths(row, ["url", "href", "productUrl", "product_url", "item.url", "seo.url"]),
+      baseUrl
+    );
     if (!listingUrl) return null;
-    const originalCurrency = asString(offers.priceCurrency, "USD").toUpperCase();
-    const originalPrice = asNumber(
-      offers.price,
-      asNumber(row.price, asNumber(offers.lowPrice, asNumber(offers.highPrice, 0)))
+    const originalCurrency = pickStringByPaths(
+      row,
+      ["offers.priceCurrency", "currency", "priceCurrency", "pricing.currency", "price.currency"],
+      asString(offers.priceCurrency, "USD")
+    ).toUpperCase();
+    const originalPrice = pickNumberByPaths(
+      row,
+      [
+        "offers.price",
+        "price",
+        "price.value",
+        "currentPrice",
+        "salePrice",
+        "amount",
+        "pricing.price",
+        "item.price",
+        "item.price.value"
+      ],
+      asNumber(offers.price, asNumber(row.price, asNumber(offers.lowPrice, asNumber(offers.highPrice, 0))))
     );
     const priceUsd = normalizeCurrencyToUsd(originalPrice, originalCurrency, FX_RATES);
     if (!Number.isFinite(priceUsd) || priceUsd <= 0) return null;
-    const title = asString(row.name) || asString(row.title) || `${query} listing`;
+    const title = pickStringByPaths(row, ["name", "title", "productName", "item.title", "item.name"], `${query} listing`);
     const idSeed =
-      asString(row.sku) ||
-      asString(row.productID) ||
-      asString(row.mpn) ||
+      pickStringByPaths(row, ["sku", "productID", "productId", "id", "item.id", "slug", "mpn"]) ||
       Buffer.from(listingUrl).toString("base64url").slice(0, 18);
-    const conditionRaw = asString(offers.itemCondition) || asString(row.itemCondition) || "Used";
+    const conditionRaw = pickStringByPaths(
+      row,
+      ["offers.itemCondition", "itemCondition", "condition", "item.condition"],
+      asString(offers.itemCondition) || asString(row.itemCondition) || "Used"
+    );
     const listing: CanonicalListing = {
       listing_id: `${this.platform}-${idSeed}`,
       platform_listing_id: idSeed,
       platform: this.platform,
       platform_listing_url: listingUrl,
-      brand: asString(row.brand) || (title.split(" ")[0] ?? "Unknown"),
+      brand: pickStringByPaths(row, ["brand", "brand.name", "manufacturer", "item.brand"], title.split(" ")[0] ?? "Unknown"),
       category,
       subcategory: `${category}_item`,
       title,
-      description: asString(row.description, title),
+      description: pickStringByPaths(row, ["description", "shortDescription", "item.description"], title),
       price_usd: priceUsd,
       original_currency: originalCurrency,
       original_price: originalPrice,
@@ -285,7 +447,7 @@ export class ScrapedMarketplaceAdapter implements MarketplaceAdapter {
       images: image ? [image] : [],
       size: null,
       color: null,
-      material: asString(row.material) || null,
+      material: pickStringByPaths(row, ["material", "item.material", "attributes.material"]) || null,
       seller_rating: null,
       seller_sales_count: null,
       seller_verified: false,
@@ -319,8 +481,8 @@ export class ScrapedMarketplaceAdapter implements MarketplaceAdapter {
       );
       if (!response.ok) throw new Error(`${this.platform} scrape failed (${response.status})`);
       const html = await response.text();
-      const parsed = extractJsonLdProducts(html)
-        .map((row) => this.mapScrapedProduct(row, query, category))
+      const parsed = [...extractJsonLdProducts(html), ...extractHeuristicRowsFromScripts(html)]
+        .map((row) => this.mapScrapedProduct(row, query, category, searchUrl))
         .filter((row): row is CanonicalListing => Boolean(row));
       if (!parsed.length) return [];
       const deduped = new Map<string, CanonicalListing>();

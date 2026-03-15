@@ -134,3 +134,32 @@ test("ScrapedMarketplaceAdapter maps JSON-LD products from search page", async (
     global.fetch = originalFetch;
   }
 });
+
+test("ScrapedMarketplaceAdapter maps embedded JSON app state listings", async () => {
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        text: async () => `<!doctype html><html><head>
+          <script id="__NEXT_DATA__" type="application/json">
+          {"props":{"pageProps":{"products":[{"id":"vc-889","title":"Gucci Suede Loafers","url":"https://www.vestiairecollective.com/items/gucci-suede-loafers","price":{"value":"780","currency":"USD"},"image":"https://cdn.example.com/loafer.jpg","brand":"Gucci"}]}}}
+          </script>
+          </head><body></body></html>`
+      }) as Response);
+
+    const adapter = new ScrapedMarketplaceAdapter({
+      platform: "vestiaire-scrape",
+      searchUrl: (query) => `https://example.com/search?q=${encodeURIComponent(query)}`,
+      buyerFeePct: null
+    });
+    const results = await adapter.search("Gucci loafers", "shoes");
+    assert.equal(results.length, 1);
+    assert.equal(results[0].platform, "vestiaire-scrape");
+    assert.equal(results[0].platform_listing_id, "vc-889");
+    assert.equal(results[0].price_usd, 780);
+    assert.equal(results[0].brand, "Gucci");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
