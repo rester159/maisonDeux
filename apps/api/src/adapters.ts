@@ -235,13 +235,6 @@ export class ScrapedMarketplaceAdapter implements MarketplaceAdapter {
     this.buyerFeePct = source.buyerFeePct;
   }
 
-  private fallback(query: string, category: ListingCategory): CanonicalListing[] {
-    return [
-      createMockListing(this.platform, `${query} (fallback)`, category, 1700),
-      createMockListing(this.platform, `${query} (fallback alt)`, category, 2300)
-    ];
-  }
-
   private mapScrapedProduct(
     row: Record<string, unknown>,
     query: string,
@@ -328,7 +321,7 @@ export class ScrapedMarketplaceAdapter implements MarketplaceAdapter {
       const parsed = extractJsonLdProducts(html)
         .map((row) => this.mapScrapedProduct(row, query, category))
         .filter((row): row is CanonicalListing => Boolean(row));
-      if (!parsed.length) return this.fallback(query, category);
+      if (!parsed.length) return [];
       const deduped = new Map<string, CanonicalListing>();
       for (const listing of parsed) {
         const dedupeKey = `${listing.platform}:${listing.platform_listing_id}`;
@@ -336,7 +329,7 @@ export class ScrapedMarketplaceAdapter implements MarketplaceAdapter {
       }
       return Array.from(deduped.values()).slice(0, 20);
     } catch {
-      return this.fallback(query, category);
+      return [];
     }
   }
 }
@@ -364,10 +357,7 @@ export class EbayAdapter implements MarketplaceAdapter {
 
   async search(query: string, category: ListingCategory): Promise<CanonicalListing[]> {
     if (!this.oauthToken) {
-      return [
-        createMockListing(this.platform, `${query} (mock)`, category, 2490),
-        createMockListing(this.platform, `${query} (mock alt)`, category, 3190)
-      ];
+      return [];
     }
 
     const params = new URLSearchParams({
@@ -440,13 +430,6 @@ abstract class PartnerRestAdapter implements MarketplaceAdapter {
   protected abstract readonly apiKey: string | undefined;
   protected abstract readonly baseUrl: string;
   protected abstract readonly buyerFeePct: number | null;
-
-  protected fallback(query: string, category: ListingCategory): CanonicalListing[] {
-    return [
-      createMockListing(this.platform, `${query} (mock)`, category, 1900),
-      createMockListing(this.platform, `${query} (mock alt)`, category, 2400)
-    ];
-  }
 
   protected mapPartnerItem(item: unknown, category: ListingCategory): CanonicalListing {
     const row = fromUnknownRecord(item);
@@ -525,9 +508,9 @@ abstract class PartnerRestAdapter implements MarketplaceAdapter {
   }
 
   async search(query: string, category: ListingCategory): Promise<CanonicalListing[]> {
-    if (!this.apiKey) return this.fallback(query, category);
+    if (!this.apiKey) return [];
     const items = await this.fetchPartnerListings(query);
-    if (!items.length) return this.fallback(query, category);
+    if (!items.length) return [];
     return items.map((item) => this.mapPartnerItem(item, category));
   }
 }

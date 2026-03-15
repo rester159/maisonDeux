@@ -9,11 +9,10 @@ import {
   VestiaireAdapter
 } from "./adapters";
 
-test("EbayAdapter falls back to mock without token", async () => {
+test("EbayAdapter returns empty without token", async () => {
   const adapter = new EbayAdapter(undefined);
   const results = await adapter.search("Rolex Submariner", "watch");
-  assert.equal(results.length, 2);
-  assert.equal(results[0].platform, "ebay");
+  assert.equal(results.length, 0);
 });
 
 test("EbayAdapter maps browse API response", async () => {
@@ -50,7 +49,7 @@ test("EbayAdapter maps browse API response", async () => {
   }
 });
 
-test("Partner adapters fallback without keys", async () => {
+test("Partner adapters return empty without keys", async () => {
   const originalChrono = process.env.CHRONO24_API_KEY;
   const originalTrr = process.env.THEREALREAL_API_KEY;
   const originalVest = process.env.VESTIAIRE_API_KEY;
@@ -65,9 +64,9 @@ test("Partner adapters fallback without keys", async () => {
     trr.search("Chanel Flap", "bag"),
     vestiaire.search("Hermes Birkin", "bag")
   ]);
-  assert.equal(a.length, 2);
-  assert.equal(b.length, 2);
-  assert.equal(c.length, 2);
+  assert.equal(a.length, 0);
+  assert.equal(b.length, 0);
+  assert.equal(c.length, 0);
   if (originalChrono) process.env.CHRONO24_API_KEY = originalChrono;
   if (originalTrr) process.env.THEREALREAL_API_KEY = originalTrr;
   if (originalVest) process.env.VESTIAIRE_API_KEY = originalVest;
