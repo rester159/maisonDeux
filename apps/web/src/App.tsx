@@ -396,12 +396,13 @@ export function App() {
                   })()}
                 </div>
                 <div className="trust">Trust: {item.trust_score || 0}/100</div>
-                {item.estimated_retail_price_usd !== null && item.estimated_retail_price_usd !== undefined ? (
-                  <div className="trust">
-                    New retail: {formatMoney(item.estimated_retail_price_usd)}
-                    {item.retail_price_source ? ` (${item.retail_price_source})` : ""}
-                  </div>
-                ) : null}
+                <div className="trust">
+                  {item.estimated_retail_price_usd !== null && item.estimated_retail_price_usd !== undefined
+                    ? `New retail: ${formatMoney(item.estimated_retail_price_usd)}${
+                        item.retail_price_source ? ` (${item.retail_price_source})` : ""
+                      }`
+                    : "New retail: unavailable"}
+                </div>
                 <a className="footer-link" href={item.platform_listing_url} target="_blank" rel="noopener noreferrer">
                   View on {item.platform}
                 </a>
