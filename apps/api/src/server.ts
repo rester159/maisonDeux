@@ -16,7 +16,7 @@ import { enqueueSearchJob, redisConnection, searchDlq, searchQueue } from "./que
 import { getMetricsSnapshot, getWorkerHeartbeat } from "./services/metrics";
 
 const app = Fastify({ logger: true });
-const WEB_DIST_PATH = resolve(process.cwd(), "apps/web/dist");
+const WEB_DIST_PATH = resolve(__dirname, "../../web/dist");
 const HAS_REACT_WEB = existsSync(WEB_DIST_PATH);
 
 const SIGNUP_SCHEMA = z.object({
