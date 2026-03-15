@@ -1000,6 +1000,20 @@ app.post("/api/v1/search/text", async (request, reply) => {
   return reply.code(202).send({ search_id: search.id, status: "pending" });
 });
 
+app.get("/api/v1/search/:searchId/image", async (request, reply) => {
+  const params = request.params as { searchId: string };
+  const search = await prisma.search.findUnique({
+    where: { id: params.searchId },
+    select: { imageBase64: true, imageMimeType: true }
+  });
+  if (!search || !search.imageBase64 || !search.imageMimeType) {
+    return reply.code(404).send({ error: "image_not_found" });
+  }
+  const bytes = Buffer.from(search.imageBase64, "base64");
+  reply.header("Cache-Control", "public, max-age=300");
+  return reply.type(search.imageMimeType).send(bytes);
+});
+
 app.get("/api/v1/search/:searchId", async (request, reply) => {
   const params = request.params as { searchId: string };
   const search = await prisma.search.findUnique({

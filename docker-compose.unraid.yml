@@ -16,6 +16,8 @@ services:
       REDIS_URL: redis://redis:6379
       JWT_SECRET: change-me
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SERPAPI_API_KEY: ${SERPAPI_API_KEY}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://maisondeux.vip}
       EBAY_APP_ID: ${EBAY_APP_ID}
       EBAY_CERT_ID: ${EBAY_CERT_ID}
       EBAY_OAUTH_TOKEN: ${EBAY_OAUTH_TOKEN}
@@ -48,6 +50,8 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/luxefinder
       REDIS_URL: redis://redis:6379
       OPENAI_API_KEY: ${OPENAI_API_KEY}
+      SERPAPI_API_KEY: ${SERPAPI_API_KEY}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-https://maisondeux.vip}
       EBAY_APP_ID: ${EBAY_APP_ID}
       EBAY_CERT_ID: ${EBAY_CERT_ID}
       EBAY_OAUTH_TOKEN: ${EBAY_OAUTH_TOKEN}

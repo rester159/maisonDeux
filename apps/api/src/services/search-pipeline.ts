@@ -13,6 +13,10 @@ import { getEbayAccessToken } from "./ebay-token";
 import { waitForRateLimitSlot, parseRateLimitWaitMs } from "./rate-limit";
 import { withRetry } from "./retry";
 import { incrementMetric, setGauge } from "./metrics";
+import {
+  identifyBrandModelFromGoogleImage,
+  mergeGoogleIdentificationIntoCategory
+} from "./google-image-identification";
 
 type RankedListing = { listing: CanonicalListing; relevance: number };
 
@@ -215,11 +219,22 @@ export async function processSearch(searchId: string): Promise<void> {
       search.imageBase64 && search.imageMimeType
         ? `data:${search.imageMimeType};base64,${search.imageBase64}`
         : search.imageUrl;
-    const analysis = imageInput
+    let analysis = imageInput
       ? await analyzeImage(imageInput)
       : defaultTextAnalysis(search.queryText ?? "", search.queryText ? undefined : ("accessory" as ListingCategory));
 
-    const queryBase = search.queryText ?? buildSearchQuery(analysis);
+    const imageLookupBaseUrl = process.env.PUBLIC_BASE_URL?.trim() || "https://maisondeux.vip";
+    const imageLookupUrl =
+      search.imageUrl ??
+      (search.imageBase64 && search.imageMimeType ? `${imageLookupBaseUrl}/api/v1/search/${search.id}/image` : null);
+    const googleIdentification = imageLookupUrl
+      ? await identifyBrandModelFromGoogleImage(imageLookupUrl).catch(() => null)
+      : null;
+    const googleQuery = mergeGoogleIdentificationIntoCategory(analysis.category, googleIdentification);
+    if (googleQuery?.brand) analysis = { ...analysis, brand: googleQuery.brand };
+    if (googleQuery?.model_name) analysis = { ...analysis, model_name: googleQuery.model_name };
+
+    const queryBase = search.queryText ?? googleQuery?.query ?? buildSearchQuery(analysis);
     const ebayToken = await getEbayAccessToken();
     const runtimeCredentials = (search.runtimeCredentials ?? undefined) as RuntimeCredentials | undefined;
     const sizeText = resolveSearchSizeText(runtimeCredentials);
