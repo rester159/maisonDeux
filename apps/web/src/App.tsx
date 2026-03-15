@@ -6,6 +6,7 @@ import { inferBrandFromText } from "./brand-reference";
 type SearchStatus = "pending" | "processing" | "completed" | "failed";
 type ApiSearch = {
   status: SearchStatus;
+  constructed_query?: string | null;
   image_analysis?: {
     brand?: string | null;
     category?: string | null;
@@ -238,8 +239,10 @@ function modelSimilarityScore(
   analysis?: NonNullable<ApiSearch["image_analysis"]> | null
 ): number {
   if (!analysis) return 0;
-  const attrs = extractListingAttributes(item);
-  const haystack = normalizeText((item.title || "") + " " + attrs.model + " " + attrs.color);
+  const standardized = extractStandardizedItemFields(item);
+  const haystack = normalizeText(
+    [item.title || "", standardized.model, standardized.color, standardized.category].join(" ")
+  );
   const model = normalizeText(analysis.model_name || "");
   const subcategory = normalizeText(analysis.subcategory || "");
   let score = 0;
@@ -326,7 +329,7 @@ function buildRowBuckets(items: CanonicalListing[], analysis?: ApiSearch["image_
   const used = new Set<string>();
   const rows: Record<RowKey, CanonicalListing[]> = { exact: [], brand: [], different: [] };
   const isExactBrand = (item: CanonicalListing): boolean =>
-    Boolean(detectedBrand) && normalizeText(extractListingAttributes(item).brand) === detectedBrand;
+    Boolean(detectedBrand) && normalizeText(extractStandardizedItemFields(item).brand) === detectedBrand;
   const takeForRow = (row: RowKey, predicate: (item: CanonicalListing) => boolean): void => {
     for (const item of remaining) {
       const id = item.listing_id;
@@ -378,12 +381,22 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<StoredSettings>(() => getStoredSettings());
   const [searchInProgress, setSearchInProgress] = useState(false);
+  const [activeSearchMode, setActiveSearchMode] = useState<"text" | "image" | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pollTimer = useRef<number | null>(null);
 
   useEffect(() => {
     return () => {
       if (pollTimer.current) window.clearInterval(pollTimer.current);
     };
+  }, []);
+
+  useEffect(() => {
+    const orientation = (screen as { orientation?: { lock?: (mode: string) => Promise<void> } }).orientation;
+    if (!orientation?.lock) return;
+    orientation.lock("portrait").catch(() => {
+      // Not all browsers allow orientation lock outside fullscreen/PWA.
+    });
   }, []);
 
   const sortedFiltered = useMemo(() => {
@@ -417,11 +430,15 @@ export function App() {
         setAnalysis(search?.image_analysis ?? null);
         setDetectedLine(buildDetectedLine(search?.image_analysis, search?.size_text));
         setMetaLine(String(listings.length) + " listings • status: " + search.status);
+        if (activeSearchMode === "image" && search?.constructed_query && search.constructed_query.trim()) {
+          setQueryText(search.constructed_query.trim());
+        }
         if (search.status === "completed" || search.status === "failed") {
           setStatus(search.status === "completed" ? "Search completed." : "Search failed.");
           if (pollTimer.current) window.clearInterval(pollTimer.current);
           pollTimer.current = null;
           setSearchInProgress(false);
+          setActiveSearchMode(null);
         } else {
           setStatus("Searching marketplaces...");
         }
@@ -430,6 +447,7 @@ export function App() {
         if (pollTimer.current) window.clearInterval(pollTimer.current);
         pollTimer.current = null;
         setSearchInProgress(false);
+        setActiveSearchMode(null);
       }
     }, 1500);
   }
@@ -445,6 +463,7 @@ export function App() {
     setDetectedLine("");
     setStatus("Starting text search...");
     setSearchInProgress(true);
+    setActiveSearchMode("text");
     try {
       const response = await fetch("/api/v1/search/text", {
         method: "POST",
@@ -458,12 +477,14 @@ export function App() {
       if (!response.ok) {
         setStatus("Text search failed.");
         setSearchInProgress(false);
+        setActiveSearchMode(null);
         return;
       }
       const data = (await response.json()) as { search_id?: string };
       if (!data.search_id) {
         setStatus("Text search failed.");
         setSearchInProgress(false);
+        setActiveSearchMode(null);
         return;
       }
       setSearchId(data.search_id);
@@ -471,11 +492,13 @@ export function App() {
     } catch {
       setStatus("Network or server error. Try again.");
       setSearchInProgress(false);
+      setActiveSearchMode(null);
     }
   }
 
-  async function startImageSearch(): Promise<void> {
-    if (!file) {
+  async function startImageSearch(selectedFile?: File | null): Promise<void> {
+    const targetFile = selectedFile ?? file;
+    if (!targetFile) {
       setStatus("Choose an image file first.");
       return;
     }
@@ -484,23 +507,26 @@ export function App() {
     setDetectedLine("");
     setStatus("Uploading image...");
     setSearchInProgress(true);
+    setActiveSearchMode("image");
     try {
       const formData = new FormData();
       const trimmedSize = sizeText.trim();
       if (trimmedSize) formData.append("size_text", trimmedSize);
       const runtimeCredentials = buildRuntimeCredentials(settings);
       if (runtimeCredentials) formData.append("runtime_credentials", JSON.stringify(runtimeCredentials));
-      formData.append("image", file);
+      formData.append("image", targetFile);
       const response = await fetch("/api/v1/search/image-upload", { method: "POST", body: formData });
       if (!response.ok) {
         setStatus("Image upload/search failed.");
         setSearchInProgress(false);
+        setActiveSearchMode(null);
         return;
       }
       const data = (await response.json()) as { search_id?: string };
       if (!data.search_id) {
         setStatus("Image upload/search failed.");
         setSearchInProgress(false);
+        setActiveSearchMode(null);
         return;
       }
       setSearchId(data.search_id);
@@ -508,7 +534,20 @@ export function App() {
     } catch {
       setStatus("Network or server error. Try again.");
       setSearchInProgress(false);
+      setActiveSearchMode(null);
     }
+  }
+
+  function resetSearchView(): void {
+    setQueryText("");
+    setSizeText("");
+    setFile(null);
+    setResults([]);
+    setAnalysis(null);
+    setDetectedLine("");
+    setMetaLine("");
+    setSearchId(null);
+    setStatus(DEFAULT_STATUS);
   }
 
   function saveSettings(): void {
@@ -611,65 +650,61 @@ export function App() {
   return (
     <div className="wrap">
       <section className="hero">
-        <h1>maisonDeux</h1>
-        <p>
-          Upload one photo and instantly search luxury resale marketplaces in parallel. Compare trusted listings,
-          condition, and pricing in one gorgeous feed.
-        </p>
+        <div className="topbar">
+          <button className="icon-btn" type="button" onClick={resetSearchView} aria-label="New search">
+            +
+          </button>
+          <h1>maisonDeux</h1>
+          <button className="icon-btn" type="button" onClick={() => setSettingsOpen((prev) => !prev)} aria-label="Menu">
+            ☰
+          </button>
+        </div>
 
         <div className="toolbar">
-          <div className="input-row">
+          <div className="search-inline">
             <input
               type="text"
               value={queryText}
               onChange={(event) => setQueryText(event.target.value)}
               placeholder="Try: Rolex Submariner, Chanel Flap, Cartier Love..."
             />
-            <button onClick={() => void startTextSearch()} disabled={searchInProgress}>
-              Search by Text
-            </button>
-          </div>
-          <div className="input-row">
             <input
+              ref={fileInputRef}
+              className="hidden-file"
               type="file"
               accept="image/jpeg,image/png,image/webp,image/heic"
-              onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+              onChange={(event) => {
+                const selected = event.target.files?.[0] ?? null;
+                setFile(selected);
+                void startImageSearch(selected);
+              }}
             />
-            <button className="secondary" onClick={() => void startImageSearch()} disabled={searchInProgress}>
-              Search by Image
+            <button className="secondary compact-btn" type="button" onClick={() => fileInputRef.current?.click()} disabled={searchInProgress}>
+              Photo
             </button>
-          </div>
-          <div className="input-row">
             <input
+              className="size-inline"
               type="text"
               value={sizeText}
               onChange={(event) => setSizeText(event.target.value)}
-              placeholder="Optional size text (e.g., US 10, EU 42, Medium)"
+              placeholder="Size"
             />
-            <span className="chip">Used to refine image search</span>
+            <label className="chip verified-inline">
+              <input type="checkbox" checked={verifiedOnly} onChange={(event) => setVerifiedOnly(event.target.checked)} /> Verified
+            </label>
+            <button className="compact-btn" onClick={() => void startTextSearch()} disabled={searchInProgress}>
+              Search
+            </button>
           </div>
         </div>
 
-        <div className="meta">
-          <span className="chip">Fashion, Bags, Watches, Jewelry</span>
-          <span className="chip">10 Marketplace Connectors</span>
-          <span className="chip">Image-first discovery</span>
-        </div>
-
         <div className="controls">
-          <select value={sortMode} onChange={(event) => setSortMode(event.target.value)}>
+          <select className="sort-right" value={sortMode} onChange={(event) => setSortMode(event.target.value)}>
             <option value="best">Sort: Best Match</option>
             <option value="low">Sort: Price Low to High</option>
             <option value="high">Sort: Price High to Low</option>
             <option value="trust">Sort: Trust Score</option>
           </select>
-          <label className="chip">
-            <input type="checkbox" checked={verifiedOnly} onChange={(event) => setVerifiedOnly(event.target.checked)} />{" "}
-            Verified only
-          </label>
-          <button className="secondary" type="button" onClick={() => setSettingsOpen((prev) => !prev)}>
-            Marketplace Settings
-          </button>
         </div>
 
         <div id="settingsPanel" className={`settings ${settingsOpen ? "open" : ""}`}>
