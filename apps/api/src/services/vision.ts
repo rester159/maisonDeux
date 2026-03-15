@@ -18,6 +18,26 @@ const PROMPT = `Analyze this luxury item image and return ONLY a JSON object:
 }
 Return only valid JSON. No explanation text.`;
 
+export function parseVisionOutput(text: string): ImageAnalysis {
+  const trimmed = text.trim();
+  try {
+    return JSON.parse(trimmed) as ImageAnalysis;
+  } catch {
+    // Handle fenced markdown output like ```json ... ```
+    const fenced = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/i);
+    if (fenced?.[1]) {
+      return JSON.parse(fenced[1].trim()) as ImageAnalysis;
+    }
+    // Last-resort extraction of first JSON object block
+    const start = trimmed.indexOf("{");
+    const end = trimmed.lastIndexOf("}");
+    if (start >= 0 && end > start) {
+      return JSON.parse(trimmed.slice(start, end + 1)) as ImageAnalysis;
+    }
+    throw new Error("vision_output_parse_failed");
+  }
+}
+
 export async function analyzeImage(imageUrl: string): Promise<ImageAnalysis> {
   if (!openai) {
     return {
@@ -48,7 +68,7 @@ export async function analyzeImage(imageUrl: string): Promise<ImageAnalysis> {
   });
 
   const text = completion.output_text.trim();
-  return JSON.parse(text) as ImageAnalysis;
+  return parseVisionOutput(text);
 }
 
 export function defaultTextAnalysis(queryText: string, categoryHint?: ListingCategory): ImageAnalysis {
