@@ -543,7 +543,7 @@ app.get("/", async (_request, reply) => {
         if (colorValue) {
           lines.push("Color: " + colorValue);
         }
-        el.textContent = lines.join("\n");
+        el.textContent = lines.join("\\n");
       }
 
       function clampPrecision(value) {
