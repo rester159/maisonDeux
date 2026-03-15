@@ -63,6 +63,21 @@ function tokenize(value: unknown): string[] {
     .filter((token) => token.length > 1);
 }
 
+type ListingAttributes = {
+  brand: string;
+  model: string;
+  color: string;
+  price: number;
+};
+
+function extractListingAttributes(item: CanonicalListing): ListingAttributes {
+  const brand = item.brand || "Unknown brand";
+  const model = item.subcategory || item.title || "unknown model";
+  const color = item.color || "unknown color";
+  const price = Number(item.price_usd || 0);
+  return { brand, model, color, price };
+}
+
 function hasTokenOverlap(tokensA: string[], tokensB: string[]): boolean {
   if (!tokensA.length || !tokensB.length) return false;
   const b = new Set(tokensB);
@@ -74,7 +89,8 @@ function modelSimilarityScore(
   analysis?: NonNullable<ApiSearch["image_analysis"]> | null
 ): number {
   if (!analysis) return 0;
-  const haystack = normalizeText((item.title || "") + " " + (item.subcategory || ""));
+  const attrs = extractListingAttributes(item);
+  const haystack = normalizeText((item.title || "") + " " + attrs.model + " " + attrs.color);
   const model = normalizeText(analysis.model_name || "");
   const subcategory = normalizeText(analysis.subcategory || "");
   let score = 0;
@@ -130,11 +146,13 @@ function buildRuntimeCredentials(settings: StoredSettings): Record<string, unkno
 }
 
 function buildRowBuckets(items: CanonicalListing[], analysis?: ApiSearch["image_analysis"] | null): Record<RowKey, CanonicalListing[]> {
+  const byPriceAsc = (a: CanonicalListing, b: CanonicalListing) =>
+    extractListingAttributes(a).price - extractListingAttributes(b).price;
   if (!analysis) {
     return {
-      exact: items.slice(0, ROW_TARGET_COUNT),
-      brand: items.slice(ROW_TARGET_COUNT, ROW_TARGET_COUNT * 2),
-      different: items.slice(ROW_TARGET_COUNT * 2, ROW_TARGET_COUNT * 3)
+      exact: items.slice(0, ROW_TARGET_COUNT).sort(byPriceAsc),
+      brand: items.slice(ROW_TARGET_COUNT, ROW_TARGET_COUNT * 2).sort(byPriceAsc),
+      different: items.slice(ROW_TARGET_COUNT * 2, ROW_TARGET_COUNT * 3).sort(byPriceAsc)
     };
   }
   const detectedBrand = normalizeText(analysis.brand || "");
@@ -142,7 +160,7 @@ function buildRowBuckets(items: CanonicalListing[], analysis?: ApiSearch["image_
   const used = new Set<string>();
   const rows: Record<RowKey, CanonicalListing[]> = { exact: [], brand: [], different: [] };
   const isExactBrand = (item: CanonicalListing): boolean =>
-    Boolean(detectedBrand) && normalizeText(item.brand || "") === detectedBrand;
+    Boolean(detectedBrand) && normalizeText(extractListingAttributes(item).brand) === detectedBrand;
   const takeForRow = (row: RowKey, predicate: (item: CanonicalListing) => boolean): void => {
     for (const item of remaining) {
       const id = item.listing_id;
@@ -172,6 +190,7 @@ function buildRowBuckets(items: CanonicalListing[], analysis?: ApiSearch["image_
 
   (["exact", "brand", "different"] as RowKey[]).forEach((row) => {
     if (rows[row].length < ROW_TARGET_COUNT) takeForRow(row, () => true);
+    rows[row].sort(byPriceAsc);
   });
   return rows;
 }
@@ -370,7 +389,19 @@ export function App() {
                 <div className="sub">
                   {item.condition || "unknown"} • {item.brand || ""}
                 </div>
+                <div className="sub">
+                  {(() => {
+                    const attrs = extractListingAttributes(item);
+                    return `Brand: ${attrs.brand} / Model: ${attrs.model} / Color: ${attrs.color} / Price: ${formatMoney(attrs.price)}`;
+                  })()}
+                </div>
                 <div className="trust">Trust: {item.trust_score || 0}/100</div>
+                {item.estimated_retail_price_usd !== null && item.estimated_retail_price_usd !== undefined ? (
+                  <div className="trust">
+                    New retail: {formatMoney(item.estimated_retail_price_usd)}
+                    {item.retail_price_source ? ` (${item.retail_price_source})` : ""}
+                  </div>
+                ) : null}
                 <a className="footer-link" href={item.platform_listing_url} target="_blank" rel="noopener noreferrer">
                   View on {item.platform}
                 </a>
