@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   Chrono24Adapter,
   EbayAdapter,
+  ScrapedMarketplaceAdapter,
   ShopGoodwillAdapter,
   TheRealRealAdapter,
   VestiaireAdapter
@@ -101,6 +102,35 @@ test("ShopGoodwillAdapter maps realtime response items", async () => {
     assert.equal(results[0].platform, "shopgoodwill");
     assert.equal(results[0].listing_id, "shopgoodwill-232420498");
     assert.equal(results[0].price_usd, 19.99);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("ScrapedMarketplaceAdapter maps JSON-LD products from search page", async () => {
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        text: async () => `<!doctype html><html><head>
+          <script type="application/ld+json">
+          {"@context":"https://schema.org","@type":"ItemList","itemListElement":[{"@type":"ListItem","position":1,"item":{"@type":"Product","sku":"rb-123","name":"Rolex Submariner Date","url":"https://shop.rebag.com/products/rolex-submariner-date","image":"https://cdn.example.com/rolex.jpg","offers":{"@type":"Offer","price":"9950","priceCurrency":"USD","itemCondition":"https://schema.org/UsedCondition"}}}]}
+          </script>
+          </head><body></body></html>`
+      }) as Response);
+
+    const adapter = new ScrapedMarketplaceAdapter({
+      platform: "rebag",
+      searchUrl: (query) => `https://shop.rebag.com/search?q=${encodeURIComponent(query)}`,
+      buyerFeePct: null
+    });
+    const results = await adapter.search("Rolex Submariner", "watch");
+    assert.equal(results.length, 1);
+    assert.equal(results[0].platform, "rebag");
+    assert.equal(results[0].platform_listing_id, "rb-123");
+    assert.equal(results[0].price_usd, 9950);
+    assert.equal(results[0].platform_listing_url, "https://shop.rebag.com/products/rolex-submariner-date");
   } finally {
     global.fetch = originalFetch;
   }

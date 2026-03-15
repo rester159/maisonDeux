@@ -1,0 +1,25 @@
+---
+description: Core coding standards for API, mobile, and shared packages
+alwaysApply: true
+---
+
+# Coding Standards
+
+- Keep diffs focused and task-scoped; avoid opportunistic refactors.
+- Preserve strict TypeScript compatibility and shared contract reuse.
+- Validate API inputs with Zod before side effects.
+- Keep search pipeline guarantees intact:
+  - `Promise.allSettled` fan-out
+  - per-adapter failure isolation
+  - retry/rate-limit wrappers
+  - explicit search status transitions
+- Never commit secrets or print credential values in logs.
+- Treat Prisma writes to related entities as transactional when possible.
+- Use `maisonDeux` for user-facing naming and copy.
+
+## Required Verification
+
+- Backend changes: `npm run typecheck -w @luxefinder/api`
+- Mobile changes: `npm run typecheck -w @luxefinder/mobile`
+- Behavior changes in API/adapters/pipeline: `npm run test -w @luxefinder/api`
+- Deployment changes: verify live `200` at `maisondeux.vip` and `www.maisondeux.vip`

@@ -1,0 +1,20 @@
+---
+description: Data source and adapter rules for marketplace integrations
+alwaysApply: true
+---
+
+# Data Sources and Integrations
+
+- Adapters must implement `MarketplaceAdapter` in `apps/api/src/adapters.ts`.
+- All adapter output must map to `CanonicalListing` from `packages/shared/src/index.ts`.
+- Normalize external data using `apps/api/src/normalization.ts` helpers.
+- Runtime credentials (`runtime_credentials`) override env credentials.
+- Never log secrets, tokens, or password-like values.
+- Preserve partial search results when a marketplace fails; do not fail the whole search.
+- New adapter work requires:
+  - mapping tests
+  - auth/error path tests
+  - compatibility with retry + rate-limit wrappers in `search-pipeline.ts`
+- Trust messaging must keep shared disclaimer semantics:
+  - maisonDeux aggregates listings
+  - maisonDeux does not authenticate items

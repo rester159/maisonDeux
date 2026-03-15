@@ -67,6 +67,65 @@ function maybeArray(value: unknown): unknown[] {
   return Array.isArray(value) ? value : [];
 }
 
+function slugifyQuery(query: string): string {
+  return query
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+}
+
+function normalizeUrl(url: string): string {
+  if (!url) return "";
+  if (url.startsWith("//")) return `https:${url}`;
+  return url;
+}
+
+function flattenJsonLdProducts(node: unknown): Record<string, unknown>[] {
+  const out: Record<string, unknown>[] = [];
+  const walk = (value: unknown) => {
+    if (!value) return;
+    if (Array.isArray(value)) {
+      value.forEach(walk);
+      return;
+    }
+    if (typeof value !== "object") return;
+    const row = value as Record<string, unknown>;
+    const type = row["@type"];
+    const typeValues = Array.isArray(type) ? type : [type];
+    if (typeValues.some((entry) => String(entry).toLowerCase() === "product")) {
+      out.push(row);
+    }
+    walk(row["@graph"]);
+    const itemList = maybeArray(row.itemListElement);
+    itemList.forEach((entry) => {
+      const item = fromUnknownRecord(entry).item;
+      walk(item ?? entry);
+    });
+    walk(row.item);
+  };
+  walk(node);
+  return out;
+}
+
+function extractJsonLdProducts(html: string): Record<string, unknown>[] {
+  const matches = [...html.matchAll(/<script[^>]*type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)];
+  const products: Record<string, unknown>[] = [];
+  for (const match of matches) {
+    const raw = (match[1] ?? "").trim();
+    if (!raw) continue;
+    try {
+      const parsed = JSON.parse(raw);
+      products.push(...flattenJsonLdProducts(parsed));
+    } catch {
+      continue;
+    }
+  }
+  return products;
+}
+
 function createMockListing(
   platform: string,
   query: string,
@@ -123,6 +182,162 @@ export class MockMarketplaceAdapter implements MarketplaceAdapter {
       createMockListing(this.platform, query, category, base),
       createMockListing(this.platform, `${query} vintage`, category, base + 400)
     ];
+  }
+}
+
+type ScrapeSource = {
+  platform: string;
+  searchUrl: (query: string) => string;
+  buyerFeePct: number | null;
+};
+
+const SCRAPE_SOURCES: ScrapeSource[] = [
+  {
+    platform: "1stdibs",
+    searchUrl: (query) => `https://www.1stdibs.com/search/?q=${encodeURIComponent(query)}`,
+    buyerFeePct: null
+  },
+  {
+    platform: "rebag",
+    searchUrl: (query) => `https://shop.rebag.com/search?q=${encodeURIComponent(query)}`,
+    buyerFeePct: null
+  },
+  {
+    platform: "grailed",
+    searchUrl: (query) => `https://www.grailed.com/shop/${slugifyQuery(query)}`,
+    buyerFeePct: null
+  },
+  {
+    platform: "fashionphile",
+    searchUrl: (query) => `https://www.fashionphile.com/shop?term=${encodeURIComponent(query)}`,
+    buyerFeePct: null
+  },
+  {
+    platform: "watchbox",
+    searchUrl: (query) => `https://www.thewatchbox.com/search?q=${encodeURIComponent(query)}`,
+    buyerFeePct: null
+  },
+  {
+    platform: "chronext",
+    searchUrl: (query) => `https://www.chronext.com/search?query=${encodeURIComponent(query)}`,
+    buyerFeePct: null
+  }
+];
+
+export class ScrapedMarketplaceAdapter implements MarketplaceAdapter {
+  readonly platform: string;
+  private readonly searchUrlFactory: (query: string) => string;
+  private readonly buyerFeePct: number | null;
+
+  constructor(source: ScrapeSource) {
+    this.platform = source.platform;
+    this.searchUrlFactory = source.searchUrl;
+    this.buyerFeePct = source.buyerFeePct;
+  }
+
+  private fallback(query: string, category: ListingCategory): CanonicalListing[] {
+    return [
+      createMockListing(this.platform, `${query} (fallback)`, category, 1700),
+      createMockListing(this.platform, `${query} (fallback alt)`, category, 2300)
+    ];
+  }
+
+  private mapScrapedProduct(
+    row: Record<string, unknown>,
+    query: string,
+    category: ListingCategory
+  ): CanonicalListing | null {
+    const now = new Date().toISOString();
+    const offersRaw = Array.isArray(row.offers) ? row.offers[0] : row.offers;
+    const offers = fromUnknownRecord(offersRaw);
+    const imageRaw = row.image;
+    const image =
+      typeof imageRaw === "string"
+        ? normalizeUrl(imageRaw)
+        : Array.isArray(imageRaw)
+          ? normalizeUrl(asString(imageRaw[0]))
+          : normalizeUrl(asString(fromUnknownRecord(imageRaw).url));
+    const listingUrl = normalizeUrl(asString(row.url));
+    if (!listingUrl) return null;
+    const originalCurrency = asString(offers.priceCurrency, "USD").toUpperCase();
+    const originalPrice = asNumber(
+      offers.price,
+      asNumber(row.price, asNumber(offers.lowPrice, asNumber(offers.highPrice, 0)))
+    );
+    const priceUsd = normalizeCurrencyToUsd(originalPrice, originalCurrency, FX_RATES);
+    if (!Number.isFinite(priceUsd) || priceUsd <= 0) return null;
+    const title = asString(row.name) || asString(row.title) || `${query} listing`;
+    const idSeed =
+      asString(row.sku) ||
+      asString(row.productID) ||
+      asString(row.mpn) ||
+      Buffer.from(listingUrl).toString("base64url").slice(0, 18);
+    const conditionRaw = asString(offers.itemCondition) || asString(row.itemCondition) || "Used";
+    const listing: CanonicalListing = {
+      listing_id: `${this.platform}-${idSeed}`,
+      platform_listing_id: idSeed,
+      platform: this.platform,
+      platform_listing_url: listingUrl,
+      brand: asString(row.brand) || (title.split(" ")[0] ?? "Unknown"),
+      category,
+      subcategory: `${category}_item`,
+      title,
+      description: asString(row.description, title),
+      price_usd: priceUsd,
+      original_currency: originalCurrency,
+      original_price: originalPrice,
+      condition: normalizeCondition(conditionRaw),
+      condition_raw: conditionRaw,
+      images: image ? [image] : [],
+      size: null,
+      color: null,
+      material: asString(row.material) || null,
+      seller_rating: null,
+      seller_sales_count: null,
+      seller_verified: false,
+      authentication_status: "unverified",
+      authentication_badge: null,
+      listed_at: now,
+      scraped_at: now,
+      is_available: true,
+      shipping_available_us: true,
+      location_country: null,
+      platform_fees_buyer_pct: this.buyerFeePct,
+      trust_score: 0
+    };
+    listing.trust_score = computeTrustScore(listing, listing.price_usd);
+    return listing;
+  }
+
+  async search(query: string, category: ListingCategory): Promise<CanonicalListing[]> {
+    const searchUrl = this.searchUrlFactory(query);
+    try {
+      const response = await fetchWithTimeout(
+        searchUrl,
+        {
+          headers: {
+            Accept: "text/html,application/xhtml+xml,application/json",
+            "User-Agent":
+              "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
+          }
+        },
+        9000
+      );
+      if (!response.ok) throw new Error(`${this.platform} scrape failed (${response.status})`);
+      const html = await response.text();
+      const parsed = extractJsonLdProducts(html)
+        .map((row) => this.mapScrapedProduct(row, query, category))
+        .filter((row): row is CanonicalListing => Boolean(row));
+      if (!parsed.length) return this.fallback(query, category);
+      const deduped = new Map<string, CanonicalListing>();
+      for (const listing of parsed) {
+        const dedupeKey = `${listing.platform}:${listing.platform_listing_id}`;
+        if (!deduped.has(dedupeKey)) deduped.set(dedupeKey, listing);
+      }
+      return Array.from(deduped.values()).slice(0, 20);
+    } catch {
+      return this.fallback(query, category);
+    }
   }
 }
 
@@ -532,17 +747,13 @@ export function getTierOneAdapters(options?: {
   runtimeCredentials?: RuntimeCredentials;
 }): MarketplaceAdapter[] {
   const runtime = options?.runtimeCredentials;
+  const scrapedAdapters = SCRAPE_SOURCES.map((source) => new ScrapedMarketplaceAdapter(source));
   return [
     new EbayAdapter(runtime?.ebay?.oauth_token ?? options?.ebayToken),
     new ShopGoodwillAdapter(runtime?.shopgoodwill),
     new TheRealRealAdapter(runtime?.therealreal?.api_key),
     new VestiaireAdapter(runtime?.vestiaire?.api_key),
     new Chrono24Adapter(runtime?.chrono24?.api_key),
-    new MockMarketplaceAdapter("1stdibs"),
-    new MockMarketplaceAdapter("rebag"),
-    new MockMarketplaceAdapter("grailed"),
-    new MockMarketplaceAdapter("fashionphile"),
-    new MockMarketplaceAdapter("watchbox"),
-    new MockMarketplaceAdapter("chronext")
+    ...scrapedAdapters
   ];
 }

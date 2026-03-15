@@ -14,20 +14,32 @@ const DEFAULT_MARKETPLACES = [
   "chronext"
 ] as const;
 
+const REALTIME_SCRAPE_PLATFORMS = new Set([
+  "shopgoodwill",
+  "1stdibs",
+  "rebag",
+  "grailed",
+  "fashionphile",
+  "watchbox",
+  "chronext"
+]);
+
 export async function ensureMarketplaceConfigs() {
   for (const platform of DEFAULT_MARKETPLACES) {
+    const apiType = platform === "ebay" ? "public_rest" : REALTIME_SCRAPE_PLATFORMS.has(platform) ? "realtime_scrape" : "partner_rest";
+    const rateLimitPerMinute = REALTIME_SCRAPE_PLATFORMS.has(platform) ? 20 : 60;
     await prisma.marketplaceConfig.upsert({
       where: { platform },
       create: {
         platform,
         isActive: true,
-        apiType: platform === "ebay" ? "public_rest" : platform === "shopgoodwill" ? "realtime_scrape" : "partner_rest",
+        apiType,
         baseUrl: null,
-        rateLimitPerMinute: platform === "shopgoodwill" ? 20 : 60
+        rateLimitPerMinute
       },
       update: {
-        apiType: platform === "ebay" ? "public_rest" : platform === "shopgoodwill" ? "realtime_scrape" : "partner_rest",
-        rateLimitPerMinute: platform === "shopgoodwill" ? 20 : 60
+        apiType,
+        rateLimitPerMinute
       }
     });
   }

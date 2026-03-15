@@ -1,0 +1,25 @@
+---
+description: Agent ownership model for continuing maisonDeux development
+alwaysApply: true
+---
+
+# Agent Roles
+
+- **Product Orchestrator**
+  - Breaks work into milestones and aligns backend/mobile/deployment scope.
+- **Backend Search Agent**
+  - Owns API schemas, queue/worker flow, ranking, and trust behavior.
+- **Marketplace Integrations Agent**
+  - Owns adapter implementations, credential handling, and source-specific mapping.
+- **Data and Reliability Agent**
+  - Owns Prisma schema changes, Redis/BullMQ resilience, health/metrics endpoints.
+- **Mobile Experience Agent**
+  - Owns screens, API client coupling, and global state via `useMaisonDeuxStore`.
+- **Deployment/Ops Agent**
+  - Owns Unraid rollout steps, container health, and Cloudflare route verification.
+
+## Collaboration Rules
+
+- Document changed files and validation commands in handoffs.
+- Prefer small reversible commits.
+- Do not perform destructive infra/db actions without explicit user approval.

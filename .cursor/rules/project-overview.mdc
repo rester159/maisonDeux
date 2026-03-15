@@ -1,0 +1,29 @@
+---
+description: Project architecture and runtime map for maisonDeux
+alwaysApply: true
+---
+
+# maisonDeux Project Overview
+
+- Monorepo workspaces:
+  - `apps/api` (Fastify API + worker + adapters + Prisma)
+  - `apps/mobile` (Expo React Native app)
+  - `packages/shared` (canonical types and trust/query helpers)
+- Search flow:
+  1. API validates request and creates `Search`
+  2. Queue enqueues `search-jobs` (or inline fallback)
+  3. Worker runs `processSearch()` fan-out
+  4. Results normalize to `CanonicalListing`, persist, rank, return via polling
+- Key backend files:
+  - `apps/api/src/server.ts`
+  - `apps/api/src/services/search-pipeline.ts`
+  - `apps/api/src/adapters.ts`
+  - `apps/api/prisma/schema.prisma`
+- Key mobile files:
+  - `apps/mobile/src/store.ts` (`useMaisonDeuxStore`)
+  - `apps/mobile/src/api.ts`
+  - `apps/mobile/src/screens/*`
+- Public domains currently expected to stay healthy:
+  - `maisondeux.vip`
+  - `www.maisondeux.vip`
+  - `ig.subwayarcade.org`
