@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CanonicalListing } from "@luxefinder/shared";
 import "./App.css";
+import { inferBrandFromText } from "./brand-reference";
 
 type SearchStatus = "pending" | "processing" | "completed" | "failed";
 type ApiSearch = {
@@ -71,6 +72,8 @@ type ListingAttributes = {
 };
 type StandardizedItemFields = {
   brand: string;
+  brandConfidence: number;
+  brandSource: string;
   model: string;
   category: string;
   color: string;
@@ -143,7 +146,7 @@ function titleCase(value: string): string {
 function inferModel(item: CanonicalListing): string {
   const title = (item.title || "").trim();
   if (!title) return "Unknown";
-  const brand = normalizeText(item.brand || "");
+  const brand = normalizeText(inferBrand(item));
   const tokens = title
     .replace(/[^\w\s-]/g, " ")
     .split(/\s+/)
@@ -154,6 +157,15 @@ function inferModel(item: CanonicalListing): string {
     .filter((token) => !MODEL_STOPWORDS.has(token.toLowerCase()));
   if (!tokens.length) return "Unknown";
   return titleCase(tokens.slice(0, 3).join(" "));
+}
+
+function inferBrand(item: CanonicalListing): string {
+  const brandMatch = inferBrandFromText({
+    title: item.title,
+    description: item.description,
+    sellerBrand: item.brand
+  });
+  return brandMatch.brand ?? "Unknown";
 }
 
 function inferColor(item: CanonicalListing): string {
@@ -195,8 +207,16 @@ function formatRetailWithDiscount(item: CanonicalListing): string {
 }
 
 function extractStandardizedItemFields(item: CanonicalListing): StandardizedItemFields {
+  const brandMatch = inferBrandFromText({
+    title: item.title,
+    description: item.description,
+    sellerBrand: item.brand
+  });
+  const brand = brandMatch.brand ?? "Unknown";
   return {
-    brand: item.brand?.trim() || "Unknown",
+    brand,
+    brandConfidence: brandMatch.confidence,
+    brandSource: brandMatch.source,
     model: inferModel(item),
     category: formatCategory(item),
     color: inferColor(item),
@@ -539,7 +559,9 @@ export function App() {
                     <div className="item-fields">
                       <div className="field-row">
                         <span className="field-label">Brand</span>
-                        <span className="field-value">{fields.brand}</span>
+                        <span className="field-value" title={`source: ${fields.brandSource}, confidence: ${fields.brandConfidence.toFixed(2)}`}>
+                          {fields.brand}
+                        </span>
                       </div>
                       <div className="field-row">
                         <span className="field-label">Model</span>
