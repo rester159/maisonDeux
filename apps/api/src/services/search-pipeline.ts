@@ -37,6 +37,56 @@ export function shouldRetryAdapter(error: unknown): boolean {
   );
 }
 
+export function resolveSearchPrecision(runtimeCredentials?: RuntimeCredentials): number {
+  const raw = runtimeCredentials?.search?.precision;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 75;
+  return Math.min(100, Math.max(10, Math.round(raw)));
+}
+
+export function buildQueryCandidates(query: string, precision: number): string[] {
+  const clean = query.trim().replace(/\s+/g, " ");
+  if (!clean) return [];
+  const candidates = new Set<string>([clean]);
+  const normalized = clean
+    .toLowerCase()
+    .replace(/[^a-z0-9\s-]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (normalized && normalized !== clean.toLowerCase()) candidates.add(normalized);
+
+  const tokens = normalized.split(" ").filter(Boolean);
+  const softWords = new Set([
+    "small",
+    "mini",
+    "medium",
+    "large",
+    "authentic",
+    "vintage",
+    "preowned",
+    "pre-owned",
+    "used",
+    "excellent",
+    "good",
+    "condition"
+  ]);
+  const categoryHints = new Set(["bag", "tote", "watch", "jewelry", "shoe", "heels", "wallet", "belt"]);
+  const coreTokens = tokens.filter((token) => !softWords.has(token));
+  const brand = coreTokens[0];
+  const categoryToken = [...coreTokens].reverse().find((token) => categoryHints.has(token));
+
+  if (precision <= 85 && coreTokens.length >= 2) {
+    candidates.add(coreTokens.slice(0, 4).join(" "));
+  }
+  if (precision <= 70 && coreTokens.length >= 2) {
+    candidates.add(coreTokens.slice(0, 2).join(" "));
+    if (brand && categoryToken) candidates.add(`${brand} ${categoryToken}`);
+  }
+  if (precision <= 55 && brand) {
+    candidates.add(brand);
+  }
+  return Array.from(candidates).filter(Boolean).slice(0, 5);
+}
+
 export async function processSearch(searchId: string): Promise<void> {
   const searchStarted = Date.now();
   await incrementMetric("search_jobs_started_total");
@@ -60,6 +110,8 @@ export async function processSearch(searchId: string): Promise<void> {
     const query = search.queryText ?? buildSearchQuery(analysis);
     const ebayToken = await getEbayAccessToken();
     const runtimeCredentials = (search.runtimeCredentials ?? undefined) as RuntimeCredentials | undefined;
+    const searchPrecision = resolveSearchPrecision(runtimeCredentials);
+    const queryCandidates = buildQueryCandidates(query, searchPrecision);
     const adapters = getTierOneAdapters({ ebayToken, runtimeCredentials });
     const activeConfigs = await prisma.marketplaceConfig.findMany({
       where: { isActive: true },
@@ -73,14 +125,34 @@ export async function processSearch(searchId: string): Promise<void> {
       enabledAdapters.map(async (adapter) => {
         const adapterStarted = Date.now();
         const perMinute = rateLimits.get(adapter.platform) ?? 60;
-        const listings = await withRetry(
-          async () => {
-            await waitForRateLimitSlot(adapter.platform, perMinute);
-            return adapter.search(query, analysis.category);
-          },
-          { maxAttempts: 3, baseDelayMs: 350, maxDelayMs: 3500 },
-          shouldRetryAdapter
-        );
+        const collected: CanonicalListing[] = [];
+        let successfulCalls = 0;
+        let lastError: unknown = null;
+        for (const candidate of queryCandidates) {
+          try {
+            const batch = await withRetry(
+              async () => {
+                await waitForRateLimitSlot(adapter.platform, perMinute);
+                return adapter.search(candidate, analysis.category);
+              },
+              { maxAttempts: 3, baseDelayMs: 350, maxDelayMs: 3500 },
+              shouldRetryAdapter
+            );
+            successfulCalls += 1;
+            if (batch.length) collected.push(...batch);
+            if (collected.length >= 20) break;
+            if (searchPrecision >= 90 && collected.length > 0) break;
+          } catch (error) {
+            lastError = error;
+          }
+        }
+        if (successfulCalls === 0 && lastError) throw lastError;
+        const deduped = new Map<string, CanonicalListing>();
+        for (const listing of collected) {
+          const key = `${listing.platform}:${listing.platform_listing_id}`;
+          if (!deduped.has(key)) deduped.set(key, listing);
+        }
+        const listings = Array.from(deduped.values()).slice(0, 20);
         await prisma.marketplaceConfig.updateMany({
           where: { platform: adapter.platform },
           data: { lastSuccessfulCall: new Date() }

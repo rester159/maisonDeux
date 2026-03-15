@@ -12,6 +12,7 @@ export type RuntimeCredentials = {
   therealreal?: { api_key?: string };
   vestiaire?: { api_key?: string };
   chrono24?: { api_key?: string };
+  search?: { precision?: number };
 };
 
 const FX_RATES = { EUR: 0.92, GBP: 0.79, JPY: 149.5, USD: 1 };

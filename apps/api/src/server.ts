@@ -49,6 +49,11 @@ const RUNTIME_CREDENTIALS_SCHEMA = z
       .object({
         api_key: z.string().min(1).optional()
       })
+      .optional(),
+    search: z
+      .object({
+        precision: z.number().int().min(10).max(100).optional()
+      })
       .optional()
   })
   .optional();
@@ -378,6 +383,7 @@ app.get("/", async (_request, reply) => {
             <input id="setChrono24Key" type="text" placeholder="Chrono24 API key (optional)" />
             <input id="setTrrKey" type="text" placeholder="The RealReal API key (optional)" />
             <input id="setVestiaireKey" type="text" placeholder="Vestiaire API key (optional)" />
+            <input id="setSearchPrecision" type="number" min="10" max="100" step="1" placeholder="Search precision 10-100 (default 75)" />
           </div>
           <div class="settings-actions">
             <button id="saveSettingsBtn" type="button">Save Settings</button>
@@ -422,7 +428,8 @@ app.get("/", async (_request, reply) => {
         ebayToken: document.getElementById("setEbayToken"),
         chrono24Key: document.getElementById("setChrono24Key"),
         trrKey: document.getElementById("setTrrKey"),
-        vestiaireKey: document.getElementById("setVestiaireKey")
+        vestiaireKey: document.getElementById("setVestiaireKey"),
+        searchPrecision: document.getElementById("setSearchPrecision")
       };
 
       function formatMoney(v) {
@@ -431,6 +438,12 @@ app.get("/", async (_request, reply) => {
 
       function setStatus(text) {
         statusEl.textContent = text;
+      }
+
+      function clampPrecision(value) {
+        const n = Number(value);
+        if (!Number.isFinite(n)) return 75;
+        return Math.min(100, Math.max(10, Math.round(n)));
       }
 
       function getStoredSettings() {
@@ -453,6 +466,7 @@ app.get("/", async (_request, reply) => {
         settingsInputs.chrono24Key.value = s.chrono24_api_key || "";
         settingsInputs.trrKey.value = s.therealreal_api_key || "";
         settingsInputs.vestiaireKey.value = s.vestiaire_api_key || "";
+        settingsInputs.searchPrecision.value = String(clampPrecision(s.search_precision ?? 75));
       }
 
       function collectSettingsFromForm() {
@@ -463,7 +477,8 @@ app.get("/", async (_request, reply) => {
           ebay_oauth_token: (settingsInputs.ebayToken.value || "").trim(),
           chrono24_api_key: (settingsInputs.chrono24Key.value || "").trim(),
           therealreal_api_key: (settingsInputs.trrKey.value || "").trim(),
-          vestiaire_api_key: (settingsInputs.vestiaireKey.value || "").trim()
+          vestiaire_api_key: (settingsInputs.vestiaireKey.value || "").trim(),
+          search_precision: clampPrecision(settingsInputs.searchPrecision.value || 75)
         };
       }
 
@@ -481,6 +496,7 @@ app.get("/", async (_request, reply) => {
         if (s.chrono24_api_key) credentials.chrono24 = { api_key: s.chrono24_api_key };
         if (s.therealreal_api_key) credentials.therealreal = { api_key: s.therealreal_api_key };
         if (s.vestiaire_api_key) credentials.vestiaire = { api_key: s.vestiaire_api_key };
+        credentials.search = { precision: clampPrecision(s.search_precision ?? 75) };
         return Object.keys(credentials).length ? credentials : undefined;
       }
 

@@ -1,7 +1,13 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import type { CanonicalListing } from "@luxefinder/shared";
-import { getMarketAveragePrice, scoreRelevance, shouldRetryAdapter } from "./search-pipeline";
+import {
+  buildQueryCandidates,
+  getMarketAveragePrice,
+  resolveSearchPrecision,
+  scoreRelevance,
+  shouldRetryAdapter
+} from "./search-pipeline";
 
 function listing(overrides: Partial<CanonicalListing> = {}): CanonicalListing {
   return {
@@ -54,4 +60,20 @@ test("shouldRetryAdapter matches retryable error signatures", () => {
   assert.equal(shouldRetryAdapter(new Error("429 too many requests")), true);
   assert.equal(shouldRetryAdapter(new Error("503 service unavailable")), true);
   assert.equal(shouldRetryAdapter(new Error("validation failed")), false);
+});
+
+test("resolveSearchPrecision clamps to allowed range", () => {
+  assert.equal(resolveSearchPrecision(undefined), 75);
+  assert.equal(resolveSearchPrecision({ search: { precision: 160 } }), 100);
+  assert.equal(resolveSearchPrecision({ search: { precision: 2 } }), 10);
+  assert.equal(resolveSearchPrecision({ search: { precision: 62.2 } }), 62);
+});
+
+test("buildQueryCandidates broadens query at lower precision", () => {
+  const exact = buildQueryCandidates("gucci giglio small tote bag", 95);
+  const broad = buildQueryCandidates("gucci giglio small tote bag", 55);
+  assert.equal(exact.length, 1);
+  assert.equal(exact[0], "gucci giglio small tote bag");
+  assert.equal(broad.includes("gucci bag"), true);
+  assert.equal(broad.includes("gucci"), true);
 });
