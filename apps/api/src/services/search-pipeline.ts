@@ -20,6 +20,30 @@ import {
 import { enrichListingsWithRetailPrice } from "./retail-price-estimator";
 
 type RankedListing = { listing: CanonicalListing; relevance: number };
+const MODEL_TOKEN_IGNORE = new Set([
+  "new",
+  "used",
+  "authentic",
+  "vintage",
+  "official",
+  "sale",
+  "women",
+  "womens",
+  "men",
+  "mens",
+  "size",
+  "bag",
+  "bags",
+  "watch",
+  "watches",
+  "shoe",
+  "shoes",
+  "jewelry",
+  "accessory",
+  "crossbody",
+  "top",
+  "handle"
+]);
 
 export function scoreRelevance(query: string, listing: CanonicalListing): number {
   const q = query.toLowerCase();
@@ -204,6 +228,34 @@ export function filterRankedListingsForImageSearch(
   return ranked.filter((entry) => entry.listing.category === analysis.category && entry.relevance >= minRelevance);
 }
 
+export function inferModelNameFromListings(listings: CanonicalListing[], brand: string | null | undefined): string | null {
+  if (!listings.length) return null;
+  const normalizedBrand = normalizeText(brand);
+  const relevant = normalizedBrand
+    ? listings.filter((listing) => normalizeText(listing.brand) === normalizedBrand)
+    : listings;
+  const target = relevant.length ? relevant : listings;
+  const tokenCounts = new Map<string, number>();
+
+  for (const listing of target.slice(0, 20)) {
+    const title = normalizeText(listing.title);
+    if (!title) continue;
+    const withoutBrand = normalizedBrand
+      ? title.replace(new RegExp(`\\b${normalizedBrand.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\b`, "g"), " ")
+      : title;
+    const tokens = tokenize(withoutBrand).filter((token) => token.length >= 3 && !MODEL_TOKEN_IGNORE.has(token));
+    for (const token of tokens) {
+      tokenCounts.set(token, (tokenCounts.get(token) ?? 0) + 1);
+    }
+  }
+
+  const best = Array.from(tokenCounts.entries())
+    .filter((entry) => entry[1] >= 2)
+    .sort((a, b) => b[1] - a[1])[0];
+  if (!best?.[0]) return null;
+  return best[0].charAt(0).toUpperCase() + best[0].slice(1);
+}
+
 export async function processSearch(searchId: string): Promise<void> {
   const searchStarted = Date.now();
   await incrementMetric("search_jobs_started_total");
@@ -321,6 +373,12 @@ export async function processSearch(searchId: string): Promise<void> {
     const finalRanked = isImageSearch
       ? filterRankedListingsForImageSearch(ranked, analysis, searchPrecision)
       : ranked;
+    if (isImageSearch && !analysis.model_name) {
+      const inferredModel = inferModelNameFromListings(finalRanked.map((entry) => entry.listing), analysis.brand);
+      if (inferredModel) {
+        analysis = { ...analysis, model_name: inferredModel };
+      }
+    }
 
     await prisma.$transaction(async (tx) => {
       await tx.searchResult.deleteMany({ where: { searchId } });

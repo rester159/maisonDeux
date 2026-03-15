@@ -1,4 +1,5 @@
 import type { CanonicalListing } from "@luxefinder/shared";
+import { getEbayAccessToken } from "./ebay-token";
 
 type RetailEstimate = {
   priceUsd: number | null;
@@ -15,6 +16,12 @@ type ShoppingRow = {
 
 type SerpShoppingResponse = {
   shopping_results?: ShoppingRow[];
+};
+
+type EbayBrowseResponse = {
+  itemSummaries?: Array<{
+    price?: { value?: string };
+  }>;
 };
 
 function normalizeQueryText(value: string | null | undefined): string {
@@ -66,20 +73,58 @@ async function estimateFromSerpGoogleShopping(query: string): Promise<RetailEsti
   return { priceUsd: null, source: null };
 }
 
+async function estimateFromEbayNew(query: string): Promise<RetailEstimate> {
+  const token = await getEbayAccessToken();
+  if (!token || !query) return { priceUsd: null, source: null };
+  const base = String(process.env.EBAY_ENVIRONMENT ?? "production").toLowerCase() === "sandbox"
+    ? "https://api.sandbox.ebay.com"
+    : "https://api.ebay.com";
+  const marketplace = process.env.EBAY_MARKETPLACE_ID?.trim() || "EBAY_US";
+  const params = new URLSearchParams({
+    q: query,
+    limit: "10",
+    filter: "conditions:{NEW}",
+    sort: "price"
+  });
+  const response = await fetch(`${base}/buy/browse/v1/item_summary/search?${params.toString()}`, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "X-EBAY-C-MARKETPLACE-ID": marketplace
+    }
+  });
+  if (!response.ok) return { priceUsd: null, source: null };
+  const payload = (await response.json()) as EbayBrowseResponse;
+  const prices = (payload.itemSummaries ?? [])
+    .map((item) => Number(item.price?.value ?? 0))
+    .filter((value) => Number.isFinite(value) && value > 0)
+    .sort((a, b) => a - b);
+  if (!prices.length) return { priceUsd: null, source: null };
+  const median = prices[Math.floor(prices.length / 2)];
+  return { priceUsd: median, source: "ebay_new_fallback" };
+}
+
 export async function enrichListingsWithRetailPrice(
   listings: CanonicalListing[],
   query: string
 ): Promise<CanonicalListing[]> {
   if (!listings.length) return listings;
   const capped = listings.slice(0, 20);
+  const cache = new Map<string, RetailEstimate>();
   const enriched = await Promise.all(
     capped.map(async (listing) => {
       const lookupQuery = buildRetailQuery(listing, query);
       if (!lookupQuery) return listing;
-      const estimate = await estimateFromSerpGoogleShopping(lookupQuery).catch(() => ({
-        priceUsd: null,
-        source: null
-      }));
+      if (!cache.has(lookupQuery)) {
+        const primary = await estimateFromSerpGoogleShopping(lookupQuery).catch(() => ({
+          priceUsd: null,
+          source: null
+        }));
+        const fallback = primary.priceUsd == null
+          ? await estimateFromEbayNew(lookupQuery).catch(() => ({ priceUsd: null, source: null }))
+          : null;
+        cache.set(lookupQuery, fallback ?? primary);
+      }
+      const estimate = cache.get(lookupQuery) ?? { priceUsd: null, source: null };
       return {
         ...listing,
         estimated_retail_price_usd: estimate.priceUsd,

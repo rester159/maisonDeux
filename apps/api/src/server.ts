@@ -540,7 +540,7 @@ app.get("/", async (_request, reply) => {
           return;
         }
         const brand = analysis.brand || "Unknown brand";
-        const model = analysis.model_name || analysis.subcategory || "unknown model";
+        const model = analysis.model_name || "unknown model";
         const category = analysis.category || "accessory";
         const attributes = ["Brand: " + brand, "Model: " + model, "Category: " + category];
         if (sizeText && String(sizeText).trim()) {

@@ -72,7 +72,9 @@ type ListingAttributes = {
 
 function extractListingAttributes(item: CanonicalListing): ListingAttributes {
   const brand = item.brand || "Unknown brand";
-  const model = item.subcategory || item.title || "unknown model";
+  const model = item.title?.trim()
+    ? item.title.trim().split(/\s+/).slice(0, 6).join(" ")
+    : "unknown model";
   const color = item.color || "unknown color";
   const price = Number(item.price_usd || 0);
   return { brand, model, color, price };
@@ -105,7 +107,7 @@ function modelSimilarityScore(
 function buildDetectedLine(analysis?: ApiSearch["image_analysis"] | null, sizeText?: string | null): string {
   if (!analysis) return "";
   const brand = analysis.brand || "Unknown brand";
-  const model = analysis.model_name || analysis.subcategory || "unknown model";
+  const model = analysis.model_name || "unknown model";
   const category = analysis.category || "accessory";
   const attributes = ["Brand: " + brand, "Model: " + model, "Category: " + category];
   if (sizeText && String(sizeText).trim()) attributes.push("Size: " + String(sizeText).trim());
@@ -114,6 +116,23 @@ function buildDetectedLine(analysis?: ApiSearch["image_analysis"] | null, sizeTe
   const colorValue = primary && secondary ? primary + ", " + secondary : primary || secondary;
   if (colorValue) attributes.push("Color: " + colorValue);
   return "Detected: " + attributes.join(" / ");
+}
+
+function buildRetailSummary(items: CanonicalListing[]): string {
+  const prices = items
+    .map((item) => item.estimated_retail_price_usd)
+    .filter((value): value is number => value !== null && value !== undefined && Number.isFinite(Number(value)))
+    .map((value) => Number(value))
+    .filter((value) => value > 0)
+    .sort((a, b) => a - b);
+  if (!prices.length) return "Estimated new retail: unavailable";
+  const median = prices[Math.floor(prices.length / 2)];
+  const min = prices[0];
+  const max = prices[prices.length - 1];
+  if (Math.abs(max - min) <= Math.max(25, median * 0.08)) {
+    return `Estimated new retail: ${formatMoney(median)}`;
+  }
+  return `Estimated new retail: ${formatMoney(median)} (range ${formatMoney(min)} - ${formatMoney(max)})`;
 }
 
 function getStoredSettings(): StoredSettings {
@@ -230,6 +249,7 @@ export function App() {
   }, [results, verifiedOnly, sortMode]);
 
   const buckets = useMemo(() => buildRowBuckets(sortedFiltered, analysis), [sortedFiltered, analysis]);
+  const retailSummary = useMemo(() => buildRetailSummary(sortedFiltered), [sortedFiltered]);
 
   async function pollSearch(id: string): Promise<void> {
     if (pollTimer.current) window.clearInterval(pollTimer.current);
@@ -552,6 +572,7 @@ export function App() {
         <div id="metaLine" className="status">
           {metaLine}
         </div>
+        <div className="status">{retailSummary}</div>
         {searchId ? <div className="status">Search: {searchId}</div> : null}
       </section>
 

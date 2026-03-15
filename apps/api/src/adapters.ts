@@ -210,7 +210,8 @@ function parseJsonFromScriptBlock(content: string): unknown | null {
     trimmed.match(/__NEXT_DATA__\s*=\s*(\{[\s\S]*\})\s*;?/),
     trimmed.match(/__NUXT__\s*=\s*(\{[\s\S]*\})\s*;?/),
     trimmed.match(/__INITIAL_STATE__\s*=\s*(\{[\s\S]*\})\s*;?/),
-    trimmed.match(/window\.__PRELOADED_STATE__\s*=\s*(\{[\s\S]*\})\s*;?/)
+    trimmed.match(/window\.__PRELOADED_STATE__\s*=\s*(\{[\s\S]*\})\s*;?/),
+    trimmed.match(/window\.__APOLLO_STATE__\s*=\s*(\{[\s\S]*\})\s*;?/)
   ];
   for (const match of assignmentMatches) {
     const raw = match?.[1];
@@ -222,6 +223,48 @@ function parseJsonFromScriptBlock(content: string): unknown | null {
     }
   }
   return null;
+}
+
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"")
+    .replace(/&#39;/g, "'")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&nbsp;/g, " ");
+}
+
+function extractTileRowsFromHtml(html: string): Record<string, unknown>[] {
+  const rows: Record<string, unknown>[] = [];
+  const anchorRegex =
+    /<a[^>]*href="([^"]+)"[^>]*data-tn="item-tile-title-anchor"[^>]*>[\s\S]*?<h2[^>]*>([\s\S]*?)<\/h2>/gi;
+  const seen = new Set<string>();
+  let match: RegExpExecArray | null;
+  while ((match = anchorRegex.exec(html))) {
+    const href = normalizeUrl(match[1] ?? "");
+    const rawTitle = decodeHtmlEntities((match[2] ?? "").replace(/<[^>]+>/g, " ").replace(/\s+/g, " ").trim());
+    if (!href || !rawTitle) continue;
+    const key = `${href}|${rawTitle}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const start = Math.max(0, match.index - 3000);
+    const end = Math.min(html.length, match.index + 3000);
+    const around = html.slice(start, end);
+    const priceMatch = around.match(/\$([0-9][0-9,]*(?:\.[0-9]{2})?)/);
+    const imageMatch = around.match(/<img[^>]+src="([^"]+)"[^>]*>/i);
+    const price = priceMatch ? Number(priceMatch[1].replace(/,/g, "")) : NaN;
+    const row: Record<string, unknown> = {
+      title: rawTitle,
+      name: rawTitle,
+      url: href,
+      href
+    };
+    if (Number.isFinite(price) && price > 0) row.price = price;
+    if (imageMatch?.[1]) row.image = imageMatch[1];
+    rows.push(row);
+  }
+  return rows;
 }
 
 function extractHeuristicRowsFromScripts(html: string): Record<string, unknown>[] {
@@ -481,7 +524,7 @@ export class ScrapedMarketplaceAdapter implements MarketplaceAdapter {
       );
       if (!response.ok) throw new Error(`${this.platform} scrape failed (${response.status})`);
       const html = await response.text();
-      const parsed = [...extractJsonLdProducts(html), ...extractHeuristicRowsFromScripts(html)]
+      const parsed = [...extractJsonLdProducts(html), ...extractHeuristicRowsFromScripts(html), ...extractTileRowsFromHtml(html)]
         .map((row) => this.mapScrapedProduct(row, query, category, searchUrl))
         .filter((row): row is CanonicalListing => Boolean(row));
       if (!parsed.length) return [];
@@ -693,10 +736,27 @@ export class Chrono24Adapter extends PartnerRestAdapter {
   protected readonly apiKey: string | undefined;
   protected readonly baseUrl = process.env.CHRONO24_BASE_URL ?? "https://api.chrono24.com/v1";
   protected readonly buyerFeePct = null;
+  private readonly scrapeFallback = new ScrapedMarketplaceAdapter({
+    platform: "chrono24",
+    searchUrl: (query) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(query)}`,
+    buyerFeePct: null
+  });
 
   constructor(runtimeApiKey?: string) {
     super();
     this.apiKey = runtimeApiKey ?? process.env.CHRONO24_API_KEY;
+  }
+
+  async search(query: string, category: ListingCategory): Promise<CanonicalListing[]> {
+    if (this.apiKey) {
+      try {
+        const items = await this.fetchPartnerListings(query);
+        if (items.length) return items.map((item) => this.mapPartnerItem(item, category));
+      } catch {
+        // Fall through to public-page scraping when partner API is unavailable.
+      }
+    }
+    return this.scrapeFallback.search(query, category);
   }
 }
 
@@ -705,10 +765,27 @@ export class TheRealRealAdapter extends PartnerRestAdapter {
   protected readonly apiKey: string | undefined;
   protected readonly baseUrl = process.env.THEREALREAL_BASE_URL ?? "https://api.therealreal.com/v1";
   protected readonly buyerFeePct = null;
+  private readonly scrapeFallback = new ScrapedMarketplaceAdapter({
+    platform: "therealreal",
+    searchUrl: (query) => `https://www.therealreal.com/search?q=${encodeURIComponent(query)}`,
+    buyerFeePct: null
+  });
 
   constructor(runtimeApiKey?: string) {
     super();
     this.apiKey = runtimeApiKey ?? process.env.THEREALREAL_API_KEY;
+  }
+
+  async search(query: string, category: ListingCategory): Promise<CanonicalListing[]> {
+    if (this.apiKey) {
+      try {
+        const items = await this.fetchPartnerListings(query);
+        if (items.length) return items.map((item) => this.mapPartnerItem(item, category));
+      } catch {
+        // Fall through to public-page scraping when partner API is unavailable.
+      }
+    }
+    return this.scrapeFallback.search(query, category);
   }
 }
 
@@ -717,10 +794,27 @@ export class VestiaireAdapter extends PartnerRestAdapter {
   protected readonly apiKey: string | undefined;
   protected readonly baseUrl = process.env.VESTIAIRE_BASE_URL ?? "https://api.vestiairecollective.com/v1";
   protected readonly buyerFeePct = 15;
+  private readonly scrapeFallback = new ScrapedMarketplaceAdapter({
+    platform: "vestiaire",
+    searchUrl: (query) => `https://www.vestiairecollective.com/search/?q=${encodeURIComponent(query)}`,
+    buyerFeePct: 15
+  });
 
   constructor(runtimeApiKey?: string) {
     super();
     this.apiKey = runtimeApiKey ?? process.env.VESTIAIRE_API_KEY;
+  }
+
+  async search(query: string, category: ListingCategory): Promise<CanonicalListing[]> {
+    if (this.apiKey) {
+      try {
+        const items = await this.fetchPartnerListings(query);
+        if (items.length) return items.map((item) => this.mapPartnerItem(item, category));
+      } catch {
+        // Fall through to public-page scraping when partner API is unavailable.
+      }
+    }
+    return this.scrapeFallback.search(query, category);
   }
 }
 

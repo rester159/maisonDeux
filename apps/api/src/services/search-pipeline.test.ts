@@ -5,6 +5,7 @@ import {
   buildQueryCandidates,
   filterRankedListingsForImageSearch,
   getMarketAveragePrice,
+  inferModelNameFromListings,
   resolveSearchPrecision,
   resolveSearchSizeText,
   scoreRelevance,
@@ -134,4 +135,16 @@ test("filterRankedListingsForImageSearch prefers exact detected brand", () => {
     85
   );
   assert.equal(filtered.some((entry) => entry.listing.brand === "Gucci"), true);
+});
+
+test("inferModelNameFromListings extracts repeated model token", () => {
+  const inferred = inferModelNameFromListings(
+    [
+      listing({ brand: "Gucci", title: "Gucci Ophidia GG crossbody bag", platform_listing_id: "a1", listing_id: "a1" }),
+      listing({ brand: "Gucci", title: "Gucci Ophidia mini shoulder bag", platform_listing_id: "a2", listing_id: "a2" }),
+      listing({ brand: "Gucci", title: "Gucci Ophidia web stripe satchel", platform_listing_id: "a3", listing_id: "a3" })
+    ],
+    "Gucci"
+  );
+  assert.equal(inferred, "Ophidia");
 });

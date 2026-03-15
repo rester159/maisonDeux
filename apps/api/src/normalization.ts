@@ -1,6 +1,7 @@
 import type { ListingCondition } from "@luxefinder/shared";
 
 const CONDITION_MAP: Record<string, ListingCondition> = {
+  new: "new_with_tags",
   "new with tags": "new_with_tags",
   nwot: "new_with_tags",
   unworn: "new_with_tags",

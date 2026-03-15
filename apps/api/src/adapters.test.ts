@@ -49,27 +49,87 @@ test("EbayAdapter maps browse API response", async () => {
   }
 });
 
-test("Partner adapters return empty without keys", async () => {
+test("Chrono24Adapter falls back to scraping when API key missing", async () => {
+  const originalFetch = global.fetch;
   const originalChrono = process.env.CHRONO24_API_KEY;
-  const originalTrr = process.env.THEREALREAL_API_KEY;
-  const originalVest = process.env.VESTIAIRE_API_KEY;
   delete process.env.CHRONO24_API_KEY;
-  delete process.env.THEREALREAL_API_KEY;
+  try {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        text: async () => `<!doctype html><html><body>
+          <div class="tile">
+            <a href="/rolex/submariner/id-998877/" data-tn="item-tile-title-anchor">
+              <h2>Rolex Submariner Date 41mm</h2>
+            </a>
+            <div>$12950</div>
+            <img src="https://cdn.example.com/c24.jpg" />
+          </div>
+        </body></html>`
+      }) as Response);
+
+    const chrono = new Chrono24Adapter();
+    const results = await chrono.search("Rolex Submariner", "watch");
+    assert.equal(results.length, 1);
+    assert.equal(results[0].platform, "chrono24");
+    assert.equal(results[0].price_usd, 12950);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalChrono) process.env.CHRONO24_API_KEY = originalChrono;
+  }
+});
+
+test("VestiaireAdapter falls back to scraping when API key missing", async () => {
+  const originalFetch = global.fetch;
+  const originalVest = process.env.VESTIAIRE_API_KEY;
   delete process.env.VESTIAIRE_API_KEY;
-  const chrono = new Chrono24Adapter();
-  const trr = new TheRealRealAdapter();
-  const vestiaire = new VestiaireAdapter();
-  const [a, b, c] = await Promise.all([
-    chrono.search("Cartier Tank", "watch"),
-    trr.search("Chanel Flap", "bag"),
-    vestiaire.search("Hermes Birkin", "bag")
-  ]);
-  assert.equal(a.length, 0);
-  assert.equal(b.length, 0);
-  assert.equal(c.length, 0);
-  if (originalChrono) process.env.CHRONO24_API_KEY = originalChrono;
-  if (originalTrr) process.env.THEREALREAL_API_KEY = originalTrr;
-  if (originalVest) process.env.VESTIAIRE_API_KEY = originalVest;
+  try {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        text: async () => `<!doctype html><html><head>
+          <script type="application/ld+json">
+          {"@context":"https://schema.org","@type":"ItemList","itemListElement":[{"@type":"ListItem","position":1,"item":{"@type":"Product","sku":"vc-998","name":"Hermes Birkin 30 Togo","url":"https://www.vestiairecollective.com/women-bags/handbags/hermes/birkin-30","image":"https://cdn.example.com/vc-birkin.jpg","offers":{"@type":"Offer","price":"14500","priceCurrency":"USD","itemCondition":"https://schema.org/UsedCondition"}}}]}
+          </script>
+          </head><body></body></html>`
+      }) as Response);
+
+    const vestiaire = new VestiaireAdapter();
+    const results = await vestiaire.search("Hermes Birkin", "bag");
+    assert.equal(results.length, 1);
+    assert.equal(results[0].platform, "vestiaire");
+    assert.equal(results[0].price_usd, 14500);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalVest) process.env.VESTIAIRE_API_KEY = originalVest;
+  }
+});
+
+test("TheRealRealAdapter falls back to scraping when API key missing", async () => {
+  const originalFetch = global.fetch;
+  const originalTrr = process.env.THEREALREAL_API_KEY;
+  delete process.env.THEREALREAL_API_KEY;
+  try {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        text: async () => `<!doctype html><html><head>
+          <script type="application/ld+json">
+          {"@context":"https://schema.org","@type":"ItemList","itemListElement":[{"@type":"ListItem","position":1,"item":{"@type":"Product","sku":"trr-551","name":"Gucci Ophidia Crossbody Bag","url":"https://www.therealreal.com/products/women/handbags/shoulder-bags/gucci-ophidia-crossbody","image":"https://cdn.example.com/trr-ophidia.jpg","offers":{"@type":"Offer","price":"1295","priceCurrency":"USD","itemCondition":"https://schema.org/UsedCondition"}}}]}
+          </script>
+          </head><body></body></html>`
+      }) as Response);
+
+    const adapter = new TheRealRealAdapter();
+    const results = await adapter.search("Gucci Ophidia", "bag");
+    assert.equal(results.length, 1);
+    assert.equal(results[0].platform, "therealreal");
+    assert.equal(results[0].platform_listing_id, "trr-551");
+    assert.equal(results[0].price_usd, 1295);
+  } finally {
+    global.fetch = originalFetch;
+    if (originalTrr) process.env.THEREALREAL_API_KEY = originalTrr;
+  }
 });
 
 test("ShopGoodwillAdapter maps realtime response items", async () => {
@@ -159,6 +219,41 @@ test("ScrapedMarketplaceAdapter maps embedded JSON app state listings", async ()
     assert.equal(results[0].platform_listing_id, "vc-889");
     assert.equal(results[0].price_usd, 780);
     assert.equal(results[0].brand, "Gucci");
+  } finally {
+    global.fetch = originalFetch;
+  }
+});
+
+test("ScrapedMarketplaceAdapter maps HTML tile anchors like 1stdibs", async () => {
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        text: async () => `<!doctype html><html><body>
+          <div class="tile">
+            <div><img src="https://a.1stdibscdn.com/item.jpg" alt="dress"/></div>
+            <a href="/fashion/clothing/evening-dresses/sass-bide-beaded-bralette-v-neck-evening-down-silk-crepe-dress-au-36-us-2-uk-6/id-v_28420512/" data-tn="item-tile-title-anchor" data-pk="v_28420512">
+              <h2>Sass &amp; Bide Beaded Bralette V Neck Evening Down Silk Crepe Dress AU 36 US 2 UK 6</h2>
+            </a>
+            <div>$216</div>
+          </div>
+        </body></html>`
+      }) as Response);
+
+    const adapter = new ScrapedMarketplaceAdapter({
+      platform: "1stdibs",
+      searchUrl: (query) => `https://www.1stdibs.com/search/?q=${encodeURIComponent(query)}`,
+      buyerFeePct: null
+    });
+    const results = await adapter.search("sass bide dress", "apparel");
+    assert.equal(results.length, 1);
+    assert.equal(results[0].platform, "1stdibs");
+    assert.equal(results[0].price_usd, 216);
+    assert.equal(
+      results[0].platform_listing_url,
+      "https://www.1stdibs.com/fashion/clothing/evening-dresses/sass-bide-beaded-bralette-v-neck-evening-down-silk-crepe-dress-au-36-us-2-uk-6/id-v_28420512/"
+    );
   } finally {
     global.fetch = originalFetch;
   }
