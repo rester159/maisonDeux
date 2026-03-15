@@ -18,6 +18,16 @@ test("inferBrandAndModelFromLensRows extracts frequent brand and model", () => {
   assert.equal(inferred.confidence > 0.5, true);
 });
 
+test("inferBrandAndModelFromLensRows infers non-whitelist brand from repeated titles", () => {
+  const inferred = inferBrandAndModelFromLensRows([
+    { title: "Alexander McQueen oversized sneaker white leather" },
+    { title: "Alexander McQueen Oversized Sneakers women size 38" },
+    { title: "How to style alexander mcqueen oversized sneaker" }
+  ]);
+  assert.equal(inferred.brand, "alexander mcqueen");
+  assert.equal(Boolean(inferred.model_name?.includes("oversized")), true);
+});
+
 test("mergeGoogleIdentificationIntoCategory appends category token", () => {
   const merged = mergeGoogleIdentificationIntoCategory("shoes", {
     brand: "gucci",

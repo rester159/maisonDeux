@@ -94,6 +94,28 @@ const MODEL_STOPWORDS = new Set([
   "accessory"
 ]);
 
+const BRAND_STOPWORDS = new Set([
+  "the",
+  "a",
+  "an",
+  "for",
+  "with",
+  "from",
+  "new",
+  "used",
+  "authentic",
+  "official",
+  "store",
+  "buy",
+  "sale",
+  "womens",
+  "women",
+  "mens",
+  "men",
+  "how",
+  "style"
+]);
+
 function normalizeText(value: string | null | undefined): string {
   return (value ?? "")
     .toLowerCase()
@@ -109,32 +131,58 @@ function tokenize(value: string | null | undefined): string[] {
     .filter((part) => part.length > 1);
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function rowsFromLens(payload: LensResponse): LensResultRow[] {
   const rows = [...(payload.exact_matches ?? []), ...(payload.products ?? []), ...(payload.visual_matches ?? [])];
-  return rows.filter((row) => typeof row.title === "string" && row.title.trim().length > 0).slice(0, 40);
+  return rows.filter((row) => {
+    const text = `${row.title ?? ""} ${row.snippet ?? ""}`.trim();
+    return text.length > 0;
+  }).slice(0, 40);
+}
+
+function selectBrandFromRows(titleBag: string[]): { brand: string | null; score: number } {
+  const knownBrandScores = new Map<string, number>();
+  for (const brand of LUXURY_BRANDS) {
+    const score = titleBag.reduce((count, title) => count + (title.includes(brand) ? 1 : 0), 0);
+    if (score > 0) knownBrandScores.set(brand, score);
+  }
+  const known = Array.from(knownBrandScores.entries()).sort((a, b) => b[1] - a[1])[0];
+  if (known) return { brand: known[0], score: known[1] };
+
+  const dynamicScores = new Map<string, number>();
+  for (const title of titleBag) {
+    const tokens = tokenize(title).filter((token) => !BRAND_STOPWORDS.has(token));
+    const first = tokens[0];
+    const second = tokens[1];
+    if (first) dynamicScores.set(first, (dynamicScores.get(first) ?? 0) + 1.4);
+    if (first && second) {
+      const bigram = `${first} ${second}`;
+      dynamicScores.set(bigram, (dynamicScores.get(bigram) ?? 0) + 1.8);
+    }
+  }
+  const dynamic = Array.from(dynamicScores.entries())
+    .filter((entry) => entry[1] >= 2)
+    .sort((a, b) => b[1] - a[1])[0];
+  return dynamic ? { brand: dynamic[0], score: dynamic[1] } : { brand: null, score: 0 };
 }
 
 export function inferBrandAndModelFromLensRows(rows: LensResultRow[]): GoogleImageIdentification {
   if (!rows.length) return { brand: null, model_name: null, query: null, confidence: 0 };
 
-  const titleBag = rows.map((row) => normalizeText(row.title));
-  const brandScores = new Map<string, number>();
-
-  for (const brand of LUXURY_BRANDS) {
-    const score = titleBag.reduce((count, title) => count + (title.includes(brand) ? 1 : 0), 0);
-    if (score > 0) brandScores.set(brand, score);
-  }
-
-  const sortedBrands = Array.from(brandScores.entries()).sort((a, b) => b[1] - a[1]);
-  const selectedBrand = sortedBrands[0]?.[0] ?? null;
-  const selectedBrandCount = sortedBrands[0]?.[1] ?? 0;
+  const titleBag = rows.map((row) => normalizeText(`${row.title ?? ""} ${row.snippet ?? ""}`));
+  const { brand: selectedBrand, score: selectedBrandCount } = selectBrandFromRows(titleBag);
   const modelNgramCounts = new Map<string, number>();
   const modelCandidateTitles = selectedBrand
     ? titleBag.filter((title) => title.includes(selectedBrand))
     : titleBag;
 
   for (const title of modelCandidateTitles) {
-    const cleaned = selectedBrand ? title.replace(new RegExp(`\\b${selectedBrand}\\b`, "g"), " ") : title;
+    const cleaned = selectedBrand
+      ? title.replace(new RegExp(`\\b${escapeRegExp(selectedBrand)}\\b`, "g"), " ")
+      : title;
     const tokens = tokenize(cleaned).filter((token) => !MODEL_STOPWORDS.has(token));
     for (let i = 0; i < tokens.length; i += 1) {
       for (let size = 1; size <= 3; size += 1) {
@@ -148,8 +196,9 @@ export function inferBrandAndModelFromLensRows(rows: LensResultRow[]): GoogleIma
     }
   }
 
+  const minModelHits = rows.length >= 5 ? 2 : 1;
   const sortedModels = Array.from(modelNgramCounts.entries())
-    .filter((entry) => entry[1] >= 2)
+    .filter((entry) => entry[1] >= minModelHits)
     .sort((a, b) => b[1] - a[1]);
   const modelName = sortedModels[0]?.[0] ?? null;
   const modelCount = sortedModels[0]?.[1] ?? 0;
@@ -183,7 +232,7 @@ export async function identifyBrandModelFromGoogleImage(imageUrl: string): Promi
 
   const url = new URL(SERP_API_URL);
   url.searchParams.set("engine", "google_lens");
-  url.searchParams.set("type", "exact_matches");
+  url.searchParams.set("type", "all");
   url.searchParams.set("url", imageUrl);
   url.searchParams.set("api_key", apiKey);
   url.searchParams.set("hl", "en");
