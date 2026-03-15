@@ -293,3 +293,38 @@ test("ScrapedMarketplaceAdapter handles 1stdibs tile when data-tn appears before
     global.fetch = originalFetch;
   }
 });
+
+test("ScrapedMarketplaceAdapter reads 1stdibs price from embedded state using data-pk", async () => {
+  const originalFetch = global.fetch;
+  try {
+    global.fetch = (async () =>
+      ({
+        ok: true,
+        text: async () => `<!doctype html><html><body>
+          <script>
+            window.__APOLLO_STATE__ = {
+              "SXRlbTp2XzI4NDIwNTEy":{"serviceId":"v_28420512","ecommerceTrackingParams":{"id":"v_28420512","price":216}}
+            };
+          </script>
+          <article data-tn="item-tile-wrapper">
+            <a data-tn="item-tile-title-anchor" data-pk="v_28420512" href="/fashion/clothing/evening-dresses/sass-bide-beaded-bralette-v-neck-evening-down-silk-crepe-dress-au-36-us-2-uk-6/id-v_28420512/">
+              <h2>Sass &amp; Bide Beaded Bralette V Neck Evening Down Silk Crepe Dress AU 36 US 2 UK 6</h2>
+            </a>
+            <img src="https://a.1stdibscdn.com/item.jpg" />
+          </article>
+        </body></html>`
+      }) as Response);
+
+    const adapter = new ScrapedMarketplaceAdapter({
+      platform: "1stdibs",
+      searchUrl: (query) => `https://www.1stdibs.com/search/?q=${encodeURIComponent(query)}`,
+      buyerFeePct: null
+    });
+    const results = await adapter.search("sass bide dress", "apparel");
+    assert.equal(results.length, 1);
+    assert.equal(results[0].platform_listing_id, "v_28420512");
+    assert.equal(results[0].price_usd, 216);
+  } finally {
+    global.fetch = originalFetch;
+  }
+});

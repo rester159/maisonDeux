@@ -235,6 +235,10 @@ function decodeHtmlEntities(text: string): string {
     .replace(/&nbsp;/g, " ");
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
 function extractTileRowsFromHtml(html: string): Record<string, unknown>[] {
   const rows: Record<string, unknown>[] = [];
   const anchorRegex = /<a[^>]*data-tn="item-tile-title-anchor"[^>]*>[\s\S]*?<h2[^>]*>([\s\S]*?)<\/h2>/gi;
@@ -252,7 +256,9 @@ function extractTileRowsFromHtml(html: string): Record<string, unknown>[] {
   for (let i = 0; i < entries.length; i += 1) {
     const entry = entries[i];
     const hrefMatch = entry.anchorTag.match(/href="([^"]+)"/i);
+    const pkMatch = entry.anchorTag.match(/data-pk="([^"]+)"/i);
     const href = normalizeUrl(hrefMatch?.[1] ?? "");
+    const pk = (pkMatch?.[1] ?? "").trim();
     const rawTitle = entry.title;
     if (!href || !rawTitle) continue;
     const key = `${href}|${rawTitle}`;
@@ -261,14 +267,23 @@ function extractTileRowsFromHtml(html: string): Record<string, unknown>[] {
     const nextIndex = entries[i + 1]?.index ?? Math.min(html.length, entry.index + 50000);
     const around = html.slice(entry.index, nextIndex);
     const priceMatch = around.match(/\$\s*([0-9][0-9,]*(?:\.[0-9]{2})?)/);
+    const scriptPriceMatch =
+      !priceMatch && pk
+        ? html.match(new RegExp(`\"(?:id|serviceId)\":\"${escapeRegExp(pk)}\"[\\s\\S]{0,1800}?\"price\":([0-9]+(?:\\.[0-9]+)?)`))
+        : null;
     const imageMatch = around.match(/<img[^>]+src="([^"]+)"[^>]*>/i);
-    const price = priceMatch ? Number(priceMatch[1].replace(/,/g, "")) : NaN;
+    const price = priceMatch
+      ? Number(priceMatch[1].replace(/,/g, ""))
+      : scriptPriceMatch
+        ? Number(scriptPriceMatch[1])
+        : NaN;
     const row: Record<string, unknown> = {
       title: rawTitle,
       name: rawTitle,
       url: href,
       href
     };
+    if (pk) row.id = pk;
     if (Number.isFinite(price) && price > 0) row.price = price;
     if (imageMatch?.[1]) row.image = imageMatch[1];
     rows.push(row);
