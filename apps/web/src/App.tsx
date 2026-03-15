@@ -860,15 +860,6 @@ export function App() {
           </div>
         </div>
 
-        <div className="status">{status}</div>
-        <div id="analysisLine" className="status">
-          {detectedLine}
-        </div>
-        <div id="metaLine" className="status">
-          {metaLine}
-        </div>
-        <div className="status">{retailSummary}</div>
-        {searchId ? <div className="status">Search: {searchId}</div> : null}
       </section>
 
       <section className="grid">
@@ -884,6 +875,20 @@ export function App() {
         <div className="empty">No results yet. Start with image upload or text search above.</div>
       ) : null}
       <div className="disclaimer">{disclaimer}</div>
+      <nav className="bottom-nav" aria-label="Primary navigation">
+        <button type="button" className="nav-item active">
+          <span className="nav-icon">🏠</span>
+          <span>Home</span>
+        </button>
+        <button type="button" className="nav-item">
+          <span className="nav-icon">🧾</span>
+          <span>Queue</span>
+        </button>
+        <button type="button" className="nav-item">
+          <span className="nav-icon">👤</span>
+          <span>Profile</span>
+        </button>
+      </nav>
     </div>
   );
 }

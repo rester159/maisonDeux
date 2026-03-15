@@ -25,9 +25,18 @@ body {
     linear-gradient(135deg, #090512 0%, #130a24 50%, #090512 100%);
 }
 
+html,
+body {
+  max-width: 100%;
+  overflow-x: hidden;
+}
+
 .wrap {
-  width: min(1200px, 100vw - 16px);
-  margin: 24px auto 40px;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto 0;
+  padding: 8px;
+  padding-bottom: 84px;
   overflow-x: hidden;
 }
 
@@ -35,15 +44,26 @@ body {
   background: linear-gradient(135deg, rgba(255, 79, 171, 0.15), rgba(143, 124, 255, 0.15));
   border: 1px solid rgba(255, 255, 255, 0.12);
   border-radius: 20px;
-  padding: 28px;
+  padding: 14px;
+  padding-top: 74px;
   box-shadow: 0 20px 40px rgba(0, 0, 0, 0.28);
 }
 
 .topbar {
+  position: fixed;
+  top: max(8px, env(safe-area-inset-top));
+  left: 8px;
+  right: 8px;
+  z-index: 1000;
   display: grid;
   grid-template-columns: 40px 1fr 40px;
   align-items: center;
   gap: 10px;
+  background: rgba(12, 8, 22, 0.88);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 12px;
+  padding: 8px;
+  backdrop-filter: blur(8px);
 }
 
 .hero h1 {
@@ -169,6 +189,8 @@ button.secondary {
 
 .sort-right {
   margin-left: auto;
+  border-radius: 999px;
+  padding-right: 30px;
 }
 
 .grid {
@@ -387,6 +409,7 @@ button.secondary {
 
   .hero {
     padding: 14px;
+    padding-top: 80px;
   }
 
   .hero h1 {
@@ -436,9 +459,13 @@ button.secondary {
   }
 
   .row-grid .listing {
-    flex: 0 0 88%;
-    min-width: 88%;
+    flex: 0 0 76%;
+    min-width: 76%;
     scroll-snap-align: start;
+  }
+
+  .listing img {
+    height: 180px;
   }
 }
 
@@ -458,4 +485,41 @@ button.secondary {
     font-size: 18px;
     font-weight: 700;
   }
+}
+
+.bottom-nav {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 1000;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+  background: rgba(10, 6, 18, 0.96);
+  border-top: 1px solid rgba(255, 255, 255, 0.16);
+  backdrop-filter: blur(8px);
+}
+
+.nav-item {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 6px;
+  border-radius: 10px;
+  font-size: 12px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.nav-item.active {
+  background: linear-gradient(135deg, rgba(255, 79, 171, 0.25), rgba(143, 124, 255, 0.25));
+}
+
+.nav-icon {
+  font-size: 16px;
+  line-height: 1;
 }
