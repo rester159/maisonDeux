@@ -116,6 +116,17 @@ function serializeStatus(status: SearchStatus): "pending" | "processing" | "comp
   return status;
 }
 
+function readSearchSizeText(runtimeCredentials: Prisma.JsonValue | null): string | null {
+  if (!runtimeCredentials || typeof runtimeCredentials !== "object" || Array.isArray(runtimeCredentials)) return null;
+  const root = runtimeCredentials as Record<string, unknown>;
+  const search = root.search;
+  if (!search || typeof search !== "object" || Array.isArray(search)) return null;
+  const sizeText = (search as Record<string, unknown>).size_text;
+  if (typeof sizeText !== "string") return null;
+  const normalized = sizeText.trim().replace(/\s+/g, " ");
+  return normalized ? normalized.slice(0, 60) : null;
+}
+
 function mergeRuntimeCredentials(
   runtime: z.infer<typeof RUNTIME_CREDENTIALS_SCHEMA> | undefined,
   sizeTextRaw: string | undefined
@@ -349,6 +360,9 @@ app.get("/", async (_request, reply) => {
         font-size: 14px;
         color: #ffe7ff;
       }
+      #analysisLine {
+        white-space: pre-line;
+      }
       .empty {
         margin-top: 18px;
         color: var(--text-soft);
@@ -504,7 +518,7 @@ app.get("/", async (_request, reply) => {
         statusEl.textContent = text;
       }
 
-      function renderImageAnalysis(analysis) {
+      function renderImageAnalysis(analysis, sizeText) {
         const el = document.getElementById("analysisLine");
         if (!el) return;
         if (!analysis || typeof analysis !== "object") {
@@ -514,7 +528,22 @@ app.get("/", async (_request, reply) => {
         const brand = analysis.brand || "Unknown brand";
         const model = analysis.model_name || analysis.subcategory || "unknown model";
         const category = analysis.category || "accessory";
-        el.textContent = "Detected: " + brand + " | " + model + " | " + category;
+        const lines = [
+          "Detected:",
+          "Brand: " + brand,
+          "Model: " + model,
+          "Category: " + category
+        ];
+        if (sizeText && String(sizeText).trim()) {
+          lines.push("Size: " + String(sizeText).trim());
+        }
+        const primaryColor = analysis.color_primary && String(analysis.color_primary).trim();
+        const secondaryColor = analysis.color_secondary && String(analysis.color_secondary).trim();
+        const colorValue = primaryColor && secondaryColor ? primaryColor + ", " + secondaryColor : primaryColor || secondaryColor;
+        if (colorValue) {
+          lines.push("Color: " + colorValue);
+        }
+        el.textContent = lines.join("\n");
       }
 
       function clampPrecision(value) {
@@ -759,7 +788,10 @@ app.get("/", async (_request, reply) => {
             state.results = (data.results || []).map(function(entry) { return entry.listing; }).filter(Boolean);
             state.disclaimer = data.disclaimer || "";
             state.analysis = data.search && data.search.image_analysis ? data.search.image_analysis : null;
-            renderImageAnalysis(data.search && data.search.image_analysis ? data.search.image_analysis : null);
+            renderImageAnalysis(
+              data.search && data.search.image_analysis ? data.search.image_analysis : null,
+              data.search ? data.search.size_text : null
+            );
             metaLineEl.textContent = String(state.results.length) + " listings • status: " + data.search.status;
             disclaimerEl.textContent = state.disclaimer;
             renderResults();
@@ -1091,6 +1123,7 @@ app.get("/api/v1/search/:searchId", async (request, reply) => {
       image_url: search.imageUrl,
       query_text: search.queryText,
       image_analysis: search.imageAnalysis,
+      size_text: readSearchSizeText(search.runtimeCredentials),
       constructed_query: search.constructedQuery,
       result_count: search.resultCount,
       created_at: search.createdAt.toISOString(),
