@@ -424,6 +424,22 @@ button.secondary {
   .field-row {
     grid-template-columns: 96px 1fr;
   }
+
+  .row-grid {
+    display: flex;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 10px;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 4px;
+  }
+
+  .row-grid .listing {
+    flex: 0 0 88%;
+    min-width: 88%;
+    scroll-snap-align: start;
+  }
 }
 
 @media (orientation: landscape) and (max-width: 1024px) {

@@ -125,6 +125,26 @@ const COLOR_WORDS = [
   "cream",
   "ivory"
 ];
+const SIMILARITY_STOPWORDS = new Set([
+  "the",
+  "and",
+  "for",
+  "with",
+  "from",
+  "item",
+  "authentic",
+  "vintage",
+  "new",
+  "used",
+  "size",
+  "bag",
+  "bags",
+  "dress",
+  "wallet",
+  "wallets",
+  "accessory",
+  "accessories"
+]);
 
 function extractListingAttributes(item: CanonicalListing): ListingAttributes {
   const brand = item.brand || "Unknown brand";
@@ -234,6 +254,64 @@ function hasTokenOverlap(tokensA: string[], tokensB: string[]): boolean {
   return tokensA.some((token) => b.has(token));
 }
 
+function similarityTokens(value: string): string[] {
+  return normalizeText(value)
+    .split(" ")
+    .filter((token) => token.length >= 2 && !SIMILARITY_STOPWORDS.has(token));
+}
+
+function toWeightedVector(textParts: Array<{ text: string; weight: number }>): Map<string, number> {
+  const vector = new Map<string, number>();
+  for (const part of textParts) {
+    const tokens = similarityTokens(part.text);
+    for (let i = 0; i < tokens.length; i += 1) {
+      const unigram = tokens[i];
+      vector.set(unigram, (vector.get(unigram) ?? 0) + part.weight);
+      if (i + 1 < tokens.length) {
+        const bigram = `${tokens[i]}_${tokens[i + 1]}`;
+        vector.set(bigram, (vector.get(bigram) ?? 0) + part.weight * 1.35);
+      }
+    }
+  }
+  return vector;
+}
+
+function cosineSimilarity(a: Map<string, number>, b: Map<string, number>): number {
+  if (!a.size || !b.size) return 0;
+  let dot = 0;
+  let normA = 0;
+  let normB = 0;
+  for (const value of a.values()) normA += value * value;
+  for (const value of b.values()) normB += value * value;
+  for (const [key, valueA] of a.entries()) {
+    const valueB = b.get(key);
+    if (valueB) dot += valueA * valueB;
+  }
+  if (!normA || !normB) return 0;
+  return dot / (Math.sqrt(normA) * Math.sqrt(normB));
+}
+
+function detectedIntentVector(analysis: NonNullable<ApiSearch["image_analysis"]>): Map<string, number> {
+  return toWeightedVector([
+    { text: analysis.model_name || "", weight: 3.2 },
+    { text: analysis.subcategory || "", weight: 2.4 },
+    { text: analysis.category || "", weight: 1.5 },
+    { text: analysis.color_primary || "", weight: 1.1 },
+    { text: analysis.color_secondary || "", weight: 0.9 }
+  ]);
+}
+
+function listingSimilarityVector(item: CanonicalListing): Map<string, number> {
+  const standardized = extractStandardizedItemFields(item);
+  return toWeightedVector([
+    { text: standardized.model, weight: 3.0 },
+    { text: standardized.category, weight: 2.0 },
+    { text: item.title || "", weight: 1.8 },
+    { text: item.description || "", weight: 1.1 },
+    { text: standardized.color, weight: 0.8 }
+  ]);
+}
+
 function modelSimilarityScore(
   item: CanonicalListing,
   analysis?: NonNullable<ApiSearch["image_analysis"]> | null
@@ -245,13 +323,14 @@ function modelSimilarityScore(
   );
   const model = normalizeText(analysis.model_name || "");
   const subcategory = normalizeText(analysis.subcategory || "");
-  let score = 0;
-  if (model && haystack.includes(model)) score += 3;
-  if (!model && subcategory && haystack.includes(subcategory)) score += 2;
-  if (model && hasTokenOverlap(tokenize(model), tokenize(haystack))) score += 1;
-  if (subcategory && hasTokenOverlap(tokenize(subcategory), tokenize(haystack))) score += 1;
-  if (analysis.category && item.category === analysis.category) score += 1;
-  return score;
+  const lexicalBoost =
+    (model && haystack.includes(model) ? 0.22 : 0) +
+    (!model && subcategory && haystack.includes(subcategory) ? 0.12 : 0) +
+    (model && hasTokenOverlap(tokenize(model), tokenize(haystack)) ? 0.1 : 0) +
+    (subcategory && hasTokenOverlap(tokenize(subcategory), tokenize(haystack)) ? 0.08 : 0) +
+    (analysis.category && item.category === analysis.category ? 0.08 : 0);
+  const vectorScore = cosineSimilarity(detectedIntentVector(analysis), listingSimilarityVector(item));
+  return Math.min(1, vectorScore + lexicalBoost);
 }
 
 function buildDetectedLine(analysis?: ApiSearch["image_analysis"] | null, sizeText?: string | null): string {
@@ -341,24 +420,30 @@ function buildRowBuckets(items: CanonicalListing[], analysis?: ApiSearch["image_
     }
   };
 
-  takeForRow("exact", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 3);
+  takeForRow("exact", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.64);
   if (rows.exact.length < ROW_TARGET_COUNT) {
-    takeForRow("exact", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 2);
+    takeForRow("exact", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.5);
   }
   if (rows.exact.length < ROW_TARGET_COUNT) {
-    takeForRow("exact", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 1);
+    takeForRow("exact", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.36);
   }
 
-  takeForRow("brand", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 1);
+  takeForRow("brand", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.28);
   if (rows.brand.length < ROW_TARGET_COUNT) takeForRow("brand", (item) => isExactBrand(item));
 
-  takeForRow("different", (item) => !isExactBrand(item) && modelSimilarityScore(item, analysis) >= 2);
+  takeForRow("different", (item) => !isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.42);
   if (rows.different.length < ROW_TARGET_COUNT) {
-    takeForRow("different", (item) => !isExactBrand(item) && modelSimilarityScore(item, analysis) >= 1);
+    takeForRow("different", (item) => !isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.3);
   }
 
   (["exact", "brand", "different"] as RowKey[]).forEach((row) => {
-    if (rows[row].length < ROW_TARGET_COUNT) takeForRow(row, () => true);
+    if (rows[row].length < ROW_TARGET_COUNT) {
+      if (row === "different") {
+        takeForRow("different", (item) => !isExactBrand(item));
+      } else {
+        takeForRow(row, () => true);
+      }
+    }
     rows[row].sort(byPriceAsc);
   });
   return rows;
