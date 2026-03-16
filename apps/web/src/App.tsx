@@ -228,20 +228,25 @@ function formatRetailWithDiscount(item: CanonicalListing): string {
 }
 
 function extractStandardizedItemFields(item: CanonicalListing): StandardizedItemFields {
-  const brandMatch = inferBrandFromText({
-    title: item.title,
-    description: item.description,
-    sellerBrand: item.brand
-  });
+  const serverBrand = (item.brand ?? "").trim();
+  const brandMatch = serverBrand
+    ? { brand: serverBrand, confidence: 0.95, source: "dictionary_exact" as const }
+    : inferBrandFromText({
+          title: item.title,
+          description: item.description,
+          sellerBrand: item.brand
+        });
   const brand = brandMatch.brand ?? "Unknown";
+  const color = (item.color ?? "").trim() ? titleCase(String(item.color).trim()) : inferColor(item);
+  const size = (item.size ?? "").trim() ? String(item.size).trim() : inferSize(item);
   return {
     brand,
     brandConfidence: brandMatch.confidence,
     brandSource: brandMatch.source,
     model: inferModel(item),
     category: formatCategory(item),
-    color: inferColor(item),
-    size: inferSize(item),
+    color,
+    size,
     condition: formatCondition(item),
     verified: item.authentication_status === "platform_authenticated",
     newAtRetail: formatRetailWithDiscount(item)

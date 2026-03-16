@@ -2,6 +2,8 @@ import { Prisma } from "@prisma/client";
 import {
   buildSearchQuery,
   computeTrustScore,
+  extractAttributes,
+  mergeExtractedIntoListing,
   type CanonicalListing,
   type ImageAnalysis,
   type ListingCategory
