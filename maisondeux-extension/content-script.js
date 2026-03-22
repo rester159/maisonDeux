@@ -80,9 +80,23 @@
       }
       return '';
     };
-    const price = (sel) => {
-      const text = q(sel);
-      return parseFloat(text.replace(/[^0-9.]/g, '')) || 0;
+    const price = (...sels) => {
+      for (const sel of sels) {
+        try {
+          const el = document.querySelector(sel);
+          const text = el?.textContent?.trim() || '';
+          if (!text) continue;
+          // Handle sale prices: "$5,000 $4,500.00" → take the last price.
+          const prices = text.match(/\$[\d,]+(?:\.\d{2})?/g);
+          if (prices && prices.length) {
+            const last = prices[prices.length - 1]; // Sale price is usually last.
+            return parseFloat(last.replace(/[^0-9.]/g, '')) || 0;
+          }
+          // Fallback: just parse any number.
+          return parseFloat(text.replace(/[^0-9.]/g, '')) || 0;
+        } catch {}
+      }
+      return 0;
     };
     // Grab full description/details text from the page.
     const descriptionText = (...sels) => {
@@ -129,7 +143,7 @@
         description: allPageText,
         category: q('[data-testid="breadcrumb"], .breadcrumbs, nav[aria-label="breadcrumb"]'),
         conditionText: q('.product-details__condition, [data-testid="condition"]'),
-        price: price('[data-testid="price"], .product-details__price, .pdp-price, [itemprop="price"]'),
+        price: price('[data-testid="price"]', '.product-details__price', '.pdp-price', '[itemprop="price"]', 'p[class*="price"]', 'span[class*="Price"]'),
         currency: 'USD',
         url: window.location.href,
         platform: 'therealreal',

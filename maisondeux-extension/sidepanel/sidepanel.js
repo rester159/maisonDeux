@@ -492,8 +492,43 @@ function renderListing(listing) {
 }
 
 // Inline keyword lists for title scanning.
-const FILTER_COLORS = ['black','noir','white','blanc','beige','brown','marron','red','rouge','pink','rose','blue','bleu','green','vert','grey','gray','gold','silver','orange','yellow','purple','navy','cream','ivory','tan','nude','burgundy','cognac','chocolate','camel','taupe','bordeaux','teal','coral','rust','olive','khaki','charcoal','champagne'];
-const FILTER_MATERIALS = ['leather','canvas','suede','silk','denim','tweed','nylon','velvet','satin','wool','cashmere','cotton','patent','lambskin','caviar','calfskin','clemence','togo','epsom','swift','barenia','evercolor','box calf','chamonix','veau','chevre','goatskin','exotic','python','crocodile','alligator','ostrich','gg supreme','monogram','damier','epi','vernis','empreinte','coated canvas','raffia','straw','rubber','pvc','nappa'];
+// Colors as { keyword: canonical English name } — all foreign terms map to English.
+const COLOR_MAP = {
+  'black': 'Black', 'noir': 'Black', 'nero': 'Black', 'schwarz': 'Black',
+  'white': 'White', 'blanc': 'White', 'bianco': 'White',
+  'beige': 'Beige', 'cream': 'Cream', 'ivory': 'Ivory', 'ecru': 'Beige',
+  'brown': 'Brown', 'marron': 'Brown', 'chocolate': 'Brown', 'cognac': 'Cognac', 'camel': 'Camel', 'tan': 'Tan', 'taupe': 'Taupe',
+  'red': 'Red', 'rouge': 'Red', 'rosso': 'Red', 'burgundy': 'Burgundy', 'bordeaux': 'Burgundy', 'wine': 'Burgundy', 'oxblood': 'Burgundy',
+  'pink': 'Pink', 'rose': 'Pink', 'blush': 'Pink', 'coral': 'Coral', 'fuchsia': 'Pink', 'salmon': 'Pink',
+  'blue': 'Blue', 'bleu': 'Blue', 'navy': 'Navy', 'cobalt': 'Blue', 'teal': 'Teal',
+  'green': 'Green', 'vert': 'Green', 'olive': 'Olive', 'khaki': 'Khaki', 'emerald': 'Green', 'sage': 'Green',
+  'grey': 'Grey', 'gray': 'Grey', 'gris': 'Grey', 'charcoal': 'Grey', 'slate': 'Grey',
+  'gold': 'Gold', 'champagne': 'Gold', 'dore': 'Gold',
+  'silver': 'Silver', 'argent': 'Silver',
+  'orange': 'Orange', 'rust': 'Orange', 'terracotta': 'Orange',
+  'yellow': 'Yellow', 'mustard': 'Yellow',
+  'purple': 'Purple', 'violet': 'Purple', 'plum': 'Purple', 'lavender': 'Lavender', 'mauve': 'Purple',
+  'nude': 'Nude', 'sand': 'Beige', 'natural': 'Beige',
+  'multicolor': 'Multicolor', 'multi': 'Multicolor',
+};
+const FILTER_COLORS = Object.keys(COLOR_MAP);
+const MATERIAL_MAP = {
+  'leather': 'Leather', 'canvas': 'Canvas', 'suede': 'Suede', 'silk': 'Silk',
+  'denim': 'Denim', 'tweed': 'Tweed', 'nylon': 'Nylon', 'velvet': 'Velvet',
+  'satin': 'Satin', 'wool': 'Wool', 'cashmere': 'Cashmere', 'cotton': 'Cotton',
+  'patent': 'Patent Leather', 'patent leather': 'Patent Leather',
+  'lambskin': 'Lambskin', 'caviar': 'Caviar Leather', 'calfskin': 'Calfskin',
+  'clemence': 'Clemence', 'togo': 'Togo', 'epsom': 'Epsom', 'swift': 'Swift',
+  'barenia': 'Barenia', 'evercolor': 'Evercolor', 'box calf': 'Box Calf',
+  'chamonix': 'Chamonix', 'veau': 'Calfskin', 'chevre': 'Chèvre', 'goatskin': 'Goatskin',
+  'nappa': 'Nappa', 'exotic': 'Exotic', 'python': 'Python', 'crocodile': 'Crocodile',
+  'alligator': 'Alligator', 'ostrich': 'Ostrich',
+  'gg supreme': 'GG Supreme', 'monogram': 'Monogram Canvas', 'damier': 'Damier',
+  'epi': 'Epi Leather', 'vernis': 'Vernis', 'empreinte': 'Empreinte',
+  'coated canvas': 'Coated Canvas', 'raffia': 'Raffia', 'straw': 'Straw',
+  'rubber': 'Rubber', 'pvc': 'PVC',
+};
+const FILTER_MATERIALS = Object.keys(MATERIAL_MAP);
 const FILTER_BRANDS = [
   'chanel','louis vuitton','gucci','hermes','hermès','dior','prada','fendi','bottega veneta',
   'balenciaga','saint laurent','ysl','celine','céline','loewe','valentino','burberry',
@@ -568,8 +603,9 @@ function scanTitle(title, keywords) {
   for (const kw of keywords) {
     const regex = new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
     if (regex.test(lower)) {
-      const display = DISPLAY_NAMES[kw] || kw.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-      found.add(display);
+      // Use canonical mapping for colors/materials, then display names, then Title Case.
+      const canonical = COLOR_MAP[kw] || MATERIAL_MAP[kw] || DISPLAY_NAMES[kw] || kw.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      found.add(canonical);
     }
   }
   return found;
