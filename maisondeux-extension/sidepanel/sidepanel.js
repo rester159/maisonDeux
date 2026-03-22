@@ -404,10 +404,9 @@ function renderResults() {
     // Try to match each filter against available options.
     function autoSet(el, targetVal) {
       if (!el || !targetVal) return;
-      const target = targetVal.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      const target = normalizeText(targetVal);
       for (const opt of el.options) {
-        const optNorm = opt.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-        if (optNorm === target || opt.value === targetVal) {
+        if (normalizeText(opt.value) === target || normalizeText(opt.textContent) === target) {
           el.value = opt.value;
           return;
         }
@@ -653,18 +652,60 @@ const DISPLAY_NAMES = {
   'classic flap': 'Classic Flap', 'classic double flap': 'Classic Double Flap',
 };
 
+/**
+ * Robust text scanner — finds keywords regardless of formatting.
+ * Handles: no spaces (CollectionNoir), camelCase (GoldPlated),
+ * punctuation (Gold-Plated), mixed case, accents, symbols.
+ *
+ * Normalizes the input text by:
+ * 1. Lowercasing
+ * 2. Stripping accents (è→e)
+ * 3. Inserting spaces before capitals (camelCase → camel case)
+ * 4. Replacing all non-alphanumeric with spaces
+ * 5. Collapsing multiple spaces
+ *
+ * Then does simple substring matching on the normalized text.
+ */
 function scanTitle(title, keywords) {
-  const lower = (title || '').toLowerCase();
+  const normalized = normalizeText(title);
   const found = new Set();
-  for (const kw of keywords) {
-    const regex = new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
-    if (regex.test(lower)) {
-      // Use canonical mapping for colors/materials/conditions, then display names, then Title Case.
+
+  // Sort keywords longest-first so "very good" matches before "good".
+  const sorted = [...keywords].sort((a, b) => b.length - a.length);
+
+  for (const kw of sorted) {
+    const kwNorm = normalizeText(kw);
+    if (normalized.includes(kwNorm)) {
       const canonical = COLOR_MAP[kw] || MATERIAL_MAP[kw] || CONDITION_MAP[kw] || DISPLAY_NAMES[kw] || kw.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-      found.add(canonical);
+      // Skip if a longer keyword already matched to this canonical.
+      if (!found.has(canonical)) found.add(canonical);
     }
   }
   return found;
+}
+
+/**
+ * Normalize text for robust matching.
+ * "CollectionNoir Clemence LeatherGold-Plated" →
+ * "collection noir clemence leather gold plated"
+ */
+function normalizeText(text) {
+  if (!text) return '';
+  return text
+    // Strip accents: è→e, é→e, etc.
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    // Insert space before uppercase letters (camelCase → camel Case)
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    // Insert space between letter and number
+    .replace(/([a-zA-Z])(\d)/g, '$1 $2')
+    .replace(/(\d)([a-zA-Z])/g, '$1 $2')
+    // Replace all non-alphanumeric with space
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    // Lowercase
+    .toLowerCase()
+    // Collapse whitespace
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 // populateFilterOptions is now inline in renderResults for cascading behavior.
@@ -694,8 +735,11 @@ const CANONICAL_BRANDS = {
 
 function normalizeBrand(brand) {
   if (!brand) return null;
-  const lower = brand.toLowerCase().trim();
-  return CANONICAL_BRANDS[lower] || brand.trim();
+  const norm = normalizeText(brand);
+  // Try exact match first, then normalized match.
+  return CANONICAL_BRANDS[brand.toLowerCase().trim()]
+    || CANONICAL_BRANDS[norm]
+    || brand.trim();
 }
 
 const STORE_NAMES = {
@@ -714,8 +758,9 @@ function matchesFilter(r, key, filterVal) {
     const store = (STORE_NAMES[r.platform] || r.platform || '').toLowerCase();
     return store.includes(filterVal);
   }
-  const searchText = [r[key], r.title, r.condition].filter(Boolean).join(' ').toLowerCase();
-  return searchText.includes(filterVal);
+  const searchText = normalizeText([r[key], r.title, r.condition].filter(Boolean).join(' '));
+  const filterNorm = normalizeText(filterVal);
+  return searchText.includes(filterNorm);
 }
 
 function parsePrice(val) {
