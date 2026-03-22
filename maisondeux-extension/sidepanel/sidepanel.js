@@ -26,12 +26,14 @@ const $clearFilters = document.getElementById('clear-filters');
 const $settingsBtn  = document.getElementById('settings-btn');
 const filterEls = {
   brand:     document.getElementById('filter-brand'),
+  store:     document.getElementById('filter-store'),
   color:     document.getElementById('filter-color'),
   model:     document.getElementById('filter-model'),
   material:  document.getElementById('filter-material'),
   condition: document.getElementById('filter-condition'),
   relevance: document.getElementById('filter-relevance'),
 };
+const $sortBy = document.getElementById('sort-by');
 
 // ---- State ----
 let isActive = true;
@@ -121,15 +123,18 @@ chrome.runtime.onMessage.addListener((message) => {
 // ---- Filters ----
 
 Object.values(filterEls).forEach((el) => {
-  el.addEventListener('change', () => {
+  if (el) el.addEventListener('change', () => {
     updateFilterStyles();
     renderResults();
   });
 });
 
+$sortBy.addEventListener('change', () => renderResults());
+
 $clearFilters.addEventListener('click', (e) => {
   e.preventDefault();
   if (filterEls.brand) filterEls.brand.value = '';
+  if (filterEls.store) filterEls.store.value = '';
   filterEls.color.value = '';
   filterEls.model.value = '';
   filterEls.material.value = '';
@@ -251,7 +256,7 @@ function renderResults() {
   let filtered = allResults.filter((r) => (r.relevanceScore ?? r.score ?? 1.0) >= minScore);
 
   // Step 2: Apply each active filter.
-  const filterKeys = ['brand', 'color', 'model', 'material', 'condition'];
+  const filterKeys = ['brand', 'store', 'color', 'model', 'material', 'condition'];
   for (const key of filterKeys) {
     const el = filterEls[key];
     if (!el || !el.value) continue;
@@ -277,15 +282,22 @@ function renderResults() {
     // Extract available values from this pool.
     const available = new Set();
     const keywordList = key === 'brand' ? FILTER_BRANDS
+      : key === 'store' ? null
       : key === 'color' ? FILTER_COLORS
       : key === 'model' ? FILTER_MODELS
       : key === 'material' ? FILTER_MATERIALS
       : FILTER_CONDITIONS;
 
     for (const r of pool) {
-      if (r[key]) available.add(r[key]);
-      scanTitle(r.title || '', keywordList).forEach((v) => available.add(v));
-      if (key === 'condition' && r.condition) available.add(r.condition);
+      if (key === 'store') {
+        // Store comes from the platform field, capitalized nicely.
+        const store = STORE_NAMES[r.platform] || r.platform || '';
+        if (store) available.add(store);
+      } else {
+        if (r[key]) available.add(r[key]);
+        if (keywordList) scanTitle(r.title || '', keywordList).forEach((v) => available.add(v));
+        if (key === 'condition' && r.condition) available.add(r.condition);
+      }
     }
 
     // Update dropdown options.
@@ -316,12 +328,28 @@ function renderResults() {
 
   updateFilterStyles();
 
-  // Sort: relevance desc, then price asc.
+  // Sort based on selected sort option.
+  const sortMode = $sortBy?.value || 'relevance';
   filtered.sort((a, b) => {
-    const scoreA = a.relevanceScore || a.score || 0;
-    const scoreB = b.relevanceScore || b.score || 0;
-    if (scoreB !== scoreA) return scoreB - scoreA;
-    return parsePrice(a.price) - parsePrice(b.price);
+    switch (sortMode) {
+      case 'price-asc':
+        return parsePrice(a.price) - parsePrice(b.price);
+      case 'price-desc':
+        return parsePrice(b.price) - parsePrice(a.price);
+      case 'savings': {
+        const srcP = parsePrice(currentProduct?.price);
+        const savA = srcP - parsePrice(a.price);
+        const savB = srcP - parsePrice(b.price);
+        return savB - savA; // Biggest savings first.
+      }
+      case 'relevance':
+      default: {
+        const sA = a.relevanceScore || a.score || 0;
+        const sB = b.relevanceScore || b.score || 0;
+        if (sB !== sA) return sB - sA;
+        return parsePrice(a.price) - parsePrice(b.price);
+      }
+    }
   });
 
   // Group by platform.
@@ -459,7 +487,22 @@ function scanTitle(title, keywords) {
 
 // populateFilterOptions is now inline in renderResults for cascading behavior.
 
+const STORE_NAMES = {
+  ebay: 'eBay',
+  therealreal: 'TheRealReal',
+  poshmark: 'Poshmark',
+  vestiaire: 'Vestiaire',
+  grailed: 'Grailed',
+  mercari: 'Mercari',
+  shopgoodwill: 'ShopGoodwill',
+  'google-shopping': 'Google Shopping',
+};
+
 function matchesFilter(r, key, filterVal) {
+  if (key === 'store') {
+    const store = (STORE_NAMES[r.platform] || r.platform || '').toLowerCase();
+    return store.includes(filterVal);
+  }
   const searchText = [r[key], r.title, r.condition].filter(Boolean).join(' ').toLowerCase();
   return searchText.includes(filterVal);
 }

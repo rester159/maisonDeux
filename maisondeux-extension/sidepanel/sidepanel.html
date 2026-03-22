@@ -53,10 +53,20 @@
   <section id="filter-section" class="hidden">
     <div class="sp-filters">
       <select id="filter-brand" class="sp-filter"><option value="">Any Brand</option></select>
+      <select id="filter-store" class="sp-filter"><option value="">Any Store</option></select>
       <select id="filter-color" class="sp-filter"><option value="">Any Color</option></select>
       <select id="filter-model" class="sp-filter"><option value="">Any Model</option></select>
       <select id="filter-material" class="sp-filter"><option value="">Any Material</option></select>
       <select id="filter-condition" class="sp-filter"><option value="">Any Condition</option></select>
+      <div class="sp-filter-row">
+        <label class="sp-hint">Sort:</label>
+        <select id="sort-by" class="sp-filter">
+          <option value="relevance" selected>Relevance</option>
+          <option value="price-asc">Price: Low to High</option>
+          <option value="price-desc">Price: High to Low</option>
+          <option value="savings">Biggest Savings</option>
+        </select>
+      </div>
       <div class="sp-filter-row">
         <label class="sp-hint">Min relevance:</label>
         <select id="filter-relevance" class="sp-filter">
