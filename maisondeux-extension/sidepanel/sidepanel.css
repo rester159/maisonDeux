@@ -132,10 +132,13 @@ body {
   background: #f0ebe5; color: #6b5b4e;
 }
 
+.sp-chip-brand    { background: #2c2218; color: #fff; }
 .sp-chip-price    { background: #2c2218; color: #fff; }
 .sp-chip-color    { background: #e3f2fd; color: #1565c0; }
 .sp-chip-model    { background: #f3e5f5; color: #7b1fa2; }
 .sp-chip-material { background: #fff3e0; color: #e65100; }
+.sp-chip-size     { background: #e0f2f1; color: #00695c; }
+.sp-chip-hardware { background: #fff8e1; color: #f57f17; }
 .sp-chip-condition { background: #e8f5e9; color: #2e7d32; }
 .sp-chip-category { background: #f0ebe5; color: #6b5b4e; }
 

@@ -94,6 +94,9 @@ async function handleProductDetected(product, tab) {
       const aiAttrs = await classifyProductAI(product, creds.anthropicKey);
       classifiedProduct = { ...product, ...aiAttrs, _aiClassified: true };
       console.log('[MaisonDeux][bg] AI classification:', JSON.stringify(aiAttrs));
+
+      // Auto-learn: save new terms discovered by AI.
+      learnFromAI(aiAttrs);
     } catch (err) {
       console.warn('[MaisonDeux][bg] AI classification failed:', err.message);
     }

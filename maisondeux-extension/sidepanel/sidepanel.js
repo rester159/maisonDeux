@@ -259,22 +259,24 @@ function showProduct(product) {
 
   // Use structured attributes first, normalize brand.
   const brand = normalizeBrand(product.brand || [...scanTitle(titleText, FILTER_BRANDS)][0] || null);
+  const size = product.size || null;
 
-  // Build details line: Brand · Model · Color · Material · Size · Price
-  const detailParts = [];
-  if (brand) detailParts.push(`<strong>${esc(brand)}</strong>`);
-  if (model) detailParts.push(esc(model));
-  if (colors) detailParts.push(esc(colors));
-  if (material) detailParts.push(esc(material));
-  if (product.size) detailParts.push(esc(product.size));
-  if (hardware) detailParts.push(esc(hardware) + ' HW');
-  if (priceVal > 0) detailParts.push(`<strong>$${priceVal.toLocaleString()}</strong>`);
-  $details.innerHTML = detailParts.join(' · ');
+  // Build ALL attributes as pills.
+  const allPills = [];
+  if (brand)              allPills.push({ label: brand, type: 'brand' });
+  if (model)              allPills.push({ label: model, type: 'model' });
+  if (colors)             allPills.push({ label: colors, type: 'color' });
+  if (material)           allPills.push({ label: material, type: 'material' });
+  if (size)               allPills.push({ label: size, type: 'size' });
+  if (hardware)           allPills.push({ label: hardware + ' HW', type: 'hardware' });
+  if (priceVal > 0)       allPills.push({ label: `$${priceVal.toLocaleString()}`, type: 'price' });
+  if (condition)          allPills.push({ label: condition, type: 'condition' });
+  if (category)           allPills.push({ label: category, type: 'category' });
 
-  // Render remaining attribute pills (material, condition, category — skip what's in details).
-  for (const pill of pills) {
-    // Skip brand/model/color/price — already in details line.
-    if (['price', 'color', 'model'].includes(pill.type)) continue;
+  // Hide the old details line.
+  $details.innerHTML = '';
+
+  for (const pill of allPills) {
     const chip = document.createElement('span');
     chip.className = `sp-chip sp-chip-${pill.type}`;
     chip.textContent = pill.label;
