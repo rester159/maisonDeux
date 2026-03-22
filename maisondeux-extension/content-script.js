@@ -196,101 +196,96 @@
     }
 
     if (hostname.includes('poshmark.com')) {
-      return {
-        brand: q('[data-testid="brand-name"], .listing__brand, a[href*="/brand/"], .listing-brand a'),
-        productName: q('[data-testid="listing-title"], .listing__title, h1'),
-        title: q('[data-testid="listing-title"], .listing__title, h1'),
-        description: descriptionText('[data-testid="listing-description"], .listing__description, .listing-description'),
-        category: q('[data-testid="listing-category"], .listing__category'),
-        conditionText: q('[data-testid="listing-condition"], .listing__condition'),
-        price: price('[data-testid="listing-price"], .listing__price, .price'),
-        currency: 'USD',
-        url: window.location.href,
-        platform: 'poshmark',
-      };
+      return universalExtract('poshmark');
     }
 
     if (hostname.includes('vestiairecollective.com')) {
-      // Grab all page text for attribute extraction.
-      const allPageText = grabAllText([
-        'h1', 'h2', 'h3', 'p', 'span', 'li',
-        '[data-testid]', '.product__description',
-        'section', 'main',
-      ]);
-
-      // Detect currency from page text.
-      let currency = 'EUR';
-      if (allPageText.includes('CHF')) currency = 'CHF';
-      else if (allPageText.includes('$') || allPageText.includes('USD')) currency = 'USD';
-      else if (allPageText.includes('£') || allPageText.includes('GBP')) currency = 'GBP';
-
-      // Try to find brand from breadcrumbs or headings.
-      const brand = q('a[href*="/chanel/"], a[href*="/hermes/"], a[href*="/louis-vuitton/"], a[href*="/gucci/"], a[href*="/dior/"]')
-        || q('h2, [data-testid="designer-name"], .product__brand')
-        || '';
-
-      return {
-        brand,
-        productName: q('h1, .product__name, [data-testid="product-title"]'),
-        title: q('h1, .product__name, [data-testid="product-title"]'),
-        description: allPageText,
-        category: q('.breadcrumb a:last-child, nav[aria-label="breadcrumb"] a:last-child'),
-        conditionText: q('[class*="condition"], [data-testid="product-condition"]'),
-        price: price('h1 + div span', '[data-testid="product-price"]', '.product__price', '.price-box', 'span[class*="price"]', 'span[class*="Price"]'),
-        currency,
-        url: window.location.href,
-        platform: 'vestiaire',
-        imageUrl: document.querySelector('img[class*="product"], img[data-testid="product-image"], meta[property="og:image"]')?.src || document.querySelector('meta[property="og:image"]')?.content || '',
-      };
+      return universalExtract('vestiaire');
     }
 
     if (hostname.includes('grailed.com')) {
-      return {
-        brand: q('.listing-designer-info a, [data-testid="designer"], .Details-designerName, [class*="DesignerName"]'),
-        productName: q('.listing-title, [data-testid="listing-title"], h1, [class*="ListingTitle"]'),
-        title: q('.listing-title, [data-testid="listing-title"], h1'),
-        description: descriptionText('.listing-description, [data-testid="listing-description"], [class*="Description"]'),
-        category: q('.listing-category, [data-testid="category"], [class*="Category"]'),
-        conditionText: q('.listing-condition, [data-testid="condition"], [class*="Condition"]'),
-        price: price('.listing-price, [data-testid="price"], .Price, [class*="Price"]'),
-        currency: 'USD',
-        url: window.location.href,
-        platform: 'grailed',
-      };
+      return universalExtract('grailed');
     }
 
     if (hostname.includes('mercari.com')) {
-      return {
-        brand: q('[data-testid="BrandName"], .BrandName, a[href*="/brand/"]'),
-        productName: q('[data-testid="ItemName"], h1, .ItemName'),
-        title: q('[data-testid="ItemName"], h1'),
-        description: descriptionText('[data-testid="ItemDescription"], .ItemDescription, .item-description'),
-        category: q('[data-testid="item-category"], .breadcrumb a:last-child'),
-        conditionText: q('[data-testid="item-condition"], [class*="Condition"]'),
-        price: price('[data-testid="ItemPrice"], .ItemPrice, .price'),
-        currency: 'USD',
-        url: window.location.href,
-        platform: 'mercari',
-      };
+      return universalExtract('mercari');
     }
 
     if (hostname.includes('shopgoodwill.com')) {
-      const title = q('.lot-title h1, .item-title, h1');
-      return {
-        brand: inferBrand(title),
-        productName: title,
-        title,
-        description: descriptionText('.lot-description, .item-description, .product-description, #description'),
-        category: q('.breadcrumb a:last-child, .category-name'),
-        conditionText: q('.item-condition, .condition'),
-        price: price('.current-bid, .item-price, .price'),
-        currency: 'USD',
-        url: window.location.href,
-        platform: 'shopgoodwill',
-      };
+      return universalExtract('shopgoodwill');
     }
 
     return null;
+  }
+
+  /**
+   * Universal extractor — works for any platform by grabbing all visible
+   * text from the page and detecting attributes via keywords.
+   */
+  function universalExtract(platform) {
+    // Get the page title (h1).
+    const title = document.querySelector('h1')?.textContent?.trim() || document.title || '';
+
+    // Get ALL visible text from the page body (limited to 3000 chars).
+    const bodyText = document.body?.innerText?.slice(0, 3000) || '';
+
+    // Detect brand from known brands list.
+    const brand = inferBrand(title) || inferBrand(bodyText);
+
+    // Detect price — find all price-like patterns and take the most prominent one.
+    let detectedPrice = 0;
+    let currency = 'USD';
+    const pricePatterns = bodyText.match(/(?:[\$€£]|CHF|USD|EUR|GBP)\s*[\d,]+(?:\.\d{2})?/g)
+      || bodyText.match(/[\d,]+(?:\.\d{2})?\s*(?:CHF|USD|EUR|GBP|€|£|\$)/g)
+      || [];
+    if (pricePatterns.length) {
+      // Take the first reasonable price (not too small, not navigation numbers).
+      for (const p of pricePatterns) {
+        const val = parseFloat(p.replace(/[^0-9.]/g, '')) || 0;
+        if (val >= 10 && val < 1000000) {
+          detectedPrice = val;
+          if (p.includes('€') || p.includes('EUR')) currency = 'EUR';
+          else if (p.includes('£') || p.includes('GBP')) currency = 'GBP';
+          else if (p.includes('CHF')) currency = 'CHF';
+          else currency = 'USD';
+          break;
+        }
+      }
+    }
+
+    // Detect condition.
+    const conditionPatterns = [
+      /\b(new with tags|brand new|never worn)\b/i,
+      /\b(like new|mint|pristine|excellent|nwot)\b/i,
+      /\b(very good condition|very good)\b/i,
+      /\b(good condition|gently used|pre-owned)\b/i,
+      /\b(fair|well worn|used)\b/i,
+    ];
+    let conditionText = '';
+    for (const pat of conditionPatterns) {
+      const m = bodyText.match(pat);
+      if (m) { conditionText = m[1]; break; }
+    }
+
+    // Detect image.
+    const imageUrl = document.querySelector('meta[property="og:image"]')?.content
+      || document.querySelector('img[src*="product"], img[src*="item"], img[class*="product"]')?.src
+      || document.querySelector('main img, article img')?.src
+      || '';
+
+    return {
+      brand,
+      productName: title,
+      title,
+      description: bodyText,
+      category: document.querySelector('nav[aria-label="breadcrumb"] a:last-child, .breadcrumb a:last-child')?.textContent?.trim() || '',
+      conditionText,
+      price: detectedPrice,
+      currency,
+      url: window.location.href,
+      platform,
+      imageUrl,
+    };
   }
 
   function inferBrand(title) {

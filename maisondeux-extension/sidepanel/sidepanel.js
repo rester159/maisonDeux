@@ -227,6 +227,7 @@ function showProduct(product) {
     product.conditionText || product.condition,
     product.categoryText || product.category,
   ].filter(Boolean).join(' ');
+  console.log('[MaisonDeux][panel] titleText length:', titleText.length, 'sample:', titleText.slice(0, 200));
 
   const pills = [];
 
