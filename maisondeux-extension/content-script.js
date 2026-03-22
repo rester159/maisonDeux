@@ -97,12 +97,36 @@
       return '';
     };
 
+    // Grab ALL text from multiple selectors, deduped, limited to 2000 chars.
+    const grabAllText = (sels) => {
+      const texts = new Set();
+      for (const sel of sels) {
+        try {
+          const els = document.querySelectorAll(sel);
+          for (const el of els) {
+            const t = el.textContent?.trim();
+            if (t && t.length > 3 && t.length < 500) texts.add(t);
+          }
+        } catch {}
+      }
+      return [...texts].join(' ').slice(0, 2000);
+    };
+
     if (hostname.includes('therealreal.com')) {
+      // Grab ALL visible text from the product page for description.
+      const allPageText = grabAllText([
+        'ul li', // Bullet point descriptions
+        '.product-details', '[data-testid="product-description"]',
+        '.pdp-description', '[itemprop="description"]',
+        '.product-details__description', '.product-details__condition',
+        'section', 'main',
+      ]);
+
       return {
         brand: q('[data-testid="designer-name"], .product-details__designer, .pdp-designer-name, h2 a[href*="/designers/"]'),
         productName: q('[data-testid="product-name"], .product-details__name, h1, .pdp-product-name'),
         title: q('[data-testid="product-name"], .product-details__name, h1'),
-        description: descriptionText('.product-details__description', '[data-testid="product-description"]', '.pdp-description', '[itemprop="description"]', '.product-details li', '.product-details__condition', '.product-details'),
+        description: allPageText,
         category: q('[data-testid="breadcrumb"], .breadcrumbs, nav[aria-label="breadcrumb"]'),
         conditionText: q('.product-details__condition, [data-testid="condition"]'),
         price: price('[data-testid="price"], .product-details__price, .pdp-price, [itemprop="price"]'),
