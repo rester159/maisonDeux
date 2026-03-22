@@ -264,6 +264,54 @@ body {
 .sp-match-chip.partial { background: #fff8e1; color: #f57f17; }
 .sp-match-chip.miss    { background: #fbe9e7; color: #c62828; }
 
+/* ---- Condition Report ---- */
+
+.sp-listing-wrapper { margin-bottom: 4px; }
+
+.sp-condition-btn {
+  background: none; border: 1px solid #d0c8be; border-radius: 3px;
+  font-size: 9px; padding: 1px 6px; cursor: pointer; color: #6b5b4e;
+  margin-left: auto; white-space: nowrap;
+}
+.sp-condition-btn:hover { background: #f0ebe5; border-color: #4a3728; }
+.sp-condition-btn:disabled { opacity: 0.5; cursor: wait; }
+
+.sp-condition-report {
+  margin: 0 0 4px 0; padding: 0;
+}
+
+.sp-report {
+  background: #fff; border: 1px solid #e8e4de; border-top: none;
+  border-radius: 0 0 6px 6px; padding: 10px; font-size: 11px;
+}
+
+.sp-report-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 6px;
+}
+
+.sp-report-overall { font-size: 14px; font-weight: 700; }
+.sp-report-confidence { font-size: 10px; color: #999; }
+.sp-report-summary { font-size: 11px; color: #444; margin-bottom: 8px; line-height: 1.4; }
+
+.sp-report-row {
+  display: grid; grid-template-columns: 70px 65px 1fr;
+  gap: 4px; padding: 3px 0; border-bottom: 1px solid #f5f3f0;
+  align-items: start;
+}
+
+.sp-report-label { font-weight: 600; color: #4a3728; font-size: 10px; }
+.sp-report-grade { font-weight: 700; font-size: 10px; }
+.sp-report-notes { font-size: 10px; color: #666; line-height: 1.3; }
+
+.sp-report-section { margin-top: 6px; font-size: 10px; }
+.sp-report-section ul { margin: 2px 0 0 14px; color: #666; }
+.sp-report-section li { margin-bottom: 2px; }
+
+.sp-report-rec { margin-top: 6px; font-size: 10px; color: #4a3728; line-height: 1.4; }
+
+.sp-report-error { padding: 8px; font-size: 11px; color: #c62828; background: #fbe9e7; border-radius: 4px; }
+
 .sp-no-results {
   text-align: center; padding: 32px 16px;
   color: #999; font-size: 13px;

@@ -7,7 +7,7 @@
 /* global chrome */
 
 const KEY_FIELDS = [
-  'ebay_app_id', 'ebay_cert_id', 'serpapi_key', 'anthropic_key',
+  'ebay_app_id', 'ebay_cert_id', 'serpapi_key', 'anthropic_key', 'condition_report_key',
   'therealreal_api_key', 'vestiaire_api_key', 'shopgoodwill_access_token',
 ];
 

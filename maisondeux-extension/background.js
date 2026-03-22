@@ -59,6 +59,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       if (!isActive) chrome.action.setBadgeText({ text: '' });
       break;
 
+    case 'CONDITION_REPORT': {
+      handleConditionReport(payload, sendResponse);
+      return true;
+    }
+
     case 'UPDATE_SETTINGS':
       chrome.tabs.query({}, (tabs) => {
         for (const tab of tabs) {
@@ -658,6 +663,7 @@ function loadCredentials() {
         mercari: {},
         serpApiKey: settings.serpapi_key || '',
         anthropicKey: settings.anthropic_key || '',
+        conditionReportKey: settings.condition_report_key || '',
       });
     });
   });
@@ -674,6 +680,101 @@ function broadcast(message) {
 // ---------------------------------------------------------------------------
 // AI Classification (Anthropic Claude API)
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// AI Condition Report (Premium)
+// ---------------------------------------------------------------------------
+
+async function handleConditionReport(payload, sendResponse) {
+  const { imageUrl, title, platform } = payload;
+  const creds = await loadCredentials();
+  const apiKey = creds.conditionReportKey || creds.anthropicKey;
+
+  if (!apiKey) {
+    sendResponse({ error: 'No AI key configured. Add an Anthropic key in Settings.' });
+    return;
+  }
+
+  if (!imageUrl) {
+    sendResponse({ error: 'No image available for this listing.' });
+    return;
+  }
+
+  try {
+    console.log('[MaisonDeux][bg] Generating condition report for:', title);
+
+    const res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        'anthropic-dangerous-direct-browser-access': 'true',
+      },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-5-20250514',
+        max_tokens: 1500,
+        system: CONDITION_REPORT_PROMPT,
+        messages: [{
+          role: 'user',
+          content: [
+            { type: 'image', source: { type: 'url', url: imageUrl } },
+            { type: 'text', text: `Product: ${title || 'Unknown'}\nPlatform: ${platform || 'Unknown'}\n\nAnalyze the condition of this item from the image. Provide an independent expert assessment.` },
+          ],
+        }],
+      }),
+    });
+
+    if (!res.ok) throw new Error(`API ${res.status}`);
+    const data = await res.json();
+    const text = data.content?.[0]?.text || '';
+    const report = parseAIJSON(text);
+    sendResponse({ report });
+  } catch (err) {
+    console.warn('[MaisonDeux][bg] Condition report failed:', err.message);
+    sendResponse({ error: err.message });
+  }
+}
+
+const CONDITION_REPORT_PROMPT = `You are a luxury goods condition assessment expert. Examine the product image and provide an independent, honest condition report.
+
+Return ONLY valid JSON. No markdown, no backticks.
+
+{
+  "overallGrade": "New | Excellent | Very Good | Good | Fair | Poor",
+  "confidenceScore": 0.0-1.0,
+  "summary": "One sentence overall assessment",
+  "exterior": {
+    "grade": "Excellent | Very Good | Good | Fair | Poor",
+    "notes": "Specific observations about exterior condition"
+  },
+  "hardware": {
+    "grade": "Excellent | Very Good | Good | Fair | Poor | N/A",
+    "notes": "Observations about zippers, clasps, chains, buckles"
+  },
+  "corners": {
+    "grade": "Excellent | Very Good | Good | Fair | Poor | N/A",
+    "notes": "Corner wear, scuffing, peeling"
+  },
+  "stitching": {
+    "grade": "Excellent | Very Good | Good | Fair | Poor",
+    "notes": "Thread condition, loose stitches, alignment"
+  },
+  "handles": {
+    "grade": "Excellent | Very Good | Good | Fair | Poor | N/A",
+    "notes": "Handle darkening, cracking, wear"
+  },
+  "interior": {
+    "grade": "Excellent | Very Good | Good | Fair | Poor | Not Visible",
+    "notes": "Lining condition, stains, peeling"
+  },
+  "odor": "Cannot assess from image",
+  "authenticitySignals": ["List any visible authenticity indicators: stamps, serial numbers, logo quality, stitching quality"],
+  "concerns": ["List any red flags or areas of concern"],
+  "recommendations": "Would you recommend purchasing at the listed price?"
+}
+
+Be thorough but honest. If you can't see certain areas clearly, say so. Base assessment ONLY on what's visible in the image.`;
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';

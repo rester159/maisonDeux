@@ -485,11 +485,8 @@ function renderResults() {
 }
 
 function renderListing(listing) {
-  const a = document.createElement('a');
-  a.className = 'sp-listing';
-  a.href = listing.link || listing.url || '#';
-  a.target = '_blank';
-  a.rel = 'noopener';
+  const wrapper = document.createElement('div');
+  wrapper.className = 'sp-listing-wrapper';
 
   const score = listing.relevanceScore || listing.score || 0;
   const scoreLabel = score >= 0.85 ? 'Exact' : score >= 0.7 ? 'Very Similar' : score >= 0.5 ? 'Similar' : score >= 0.3 ? 'Related' : 'Weak';
@@ -511,28 +508,67 @@ function renderListing(listing) {
 
   const priceText = listing.price || '';
   const imgSrc = listing.img || listing.imageUrl || '';
-
   const platform = listing.platform || listing.source || '';
   const faviconUrl = getPlatformFavicon(platform);
 
-  a.innerHTML = `
-    ${imgSrc ? `<img class="sp-listing-img" src="${esc(imgSrc)}" alt="" />` : '<div class="sp-listing-img"></div>'}
-    <div class="sp-listing-info">
-      <div class="sp-listing-title">
-        ${faviconUrl ? `<img class="sp-platform-icon" src="${esc(faviconUrl)}" alt="${esc(platform)}" />` : ''}
-        ${esc(listing.title || '')}
+  wrapper.innerHTML = `
+    <a class="sp-listing" href="${esc(listing.link || listing.url || '#')}" target="_blank" rel="noopener">
+      ${imgSrc ? `<img class="sp-listing-img" src="${esc(imgSrc)}" alt="" />` : '<div class="sp-listing-img"></div>'}
+      <div class="sp-listing-info">
+        <div class="sp-listing-title">
+          ${faviconUrl ? `<img class="sp-platform-icon" src="${esc(faviconUrl)}" alt="${esc(platform)}" />` : ''}
+          ${esc(listing.title || '')}
+        </div>
+        <div class="sp-listing-price-row">
+          <span class="sp-listing-price">${esc(priceText)}</span>
+          ${savingsHtml}
+        </div>
+        <div class="sp-listing-meta">
+          <span class="sp-relevance ${scoreClass}">${scoreLabel} ${Math.round(score * 100)}%</span>
+          <button class="sp-condition-btn" title="AI Condition Report">&#128269; Report</button>
+        </div>
       </div>
-      <div class="sp-listing-price-row">
-        <span class="sp-listing-price">${esc(priceText)}</span>
-        ${savingsHtml}
-      </div>
-      <div class="sp-listing-meta">
-        <span class="sp-relevance ${scoreClass}">${scoreLabel} ${Math.round(score * 100)}%</span>
-      </div>
-    </div>
+    </a>
+    <div class="sp-condition-report hidden"></div>
   `;
 
-  return a;
+  // Condition report button handler.
+  const btn = wrapper.querySelector('.sp-condition-btn');
+  const reportDiv = wrapper.querySelector('.sp-condition-report');
+
+  btn.addEventListener('click', (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+
+    if (reportDiv.dataset.loaded === 'true') {
+      reportDiv.classList.toggle('hidden');
+      return;
+    }
+
+    btn.textContent = '⏳ Analyzing...';
+    btn.disabled = true;
+
+    chrome.runtime.sendMessage({
+      type: 'CONDITION_REPORT',
+      payload: { imageUrl: imgSrc, title: listing.title, platform },
+    }, (response) => {
+      btn.textContent = '🔍 Report';
+      btn.disabled = false;
+
+      if (response?.error) {
+        reportDiv.innerHTML = `<div class="sp-report-error">${esc(response.error)}</div>`;
+      } else if (response?.report) {
+        reportDiv.innerHTML = renderConditionReport(response.report);
+      } else {
+        reportDiv.innerHTML = '<div class="sp-report-error">No response from AI</div>';
+      }
+
+      reportDiv.dataset.loaded = 'true';
+      reportDiv.classList.remove('hidden');
+    });
+  });
+
+  return wrapper;
 }
 
 // Inline keyword lists for title scanning.
@@ -775,6 +811,47 @@ function esc(s) {
   const d = document.createElement('div');
   d.textContent = s || '';
   return d.innerHTML;
+}
+
+function renderConditionReport(report) {
+  const gradeColor = (g) => {
+    if (!g || g === 'N/A' || g === 'Not Visible') return '#999';
+    if (g === 'Excellent' || g === 'New') return '#2e7d32';
+    if (g === 'Very Good') return '#558b2f';
+    if (g === 'Good') return '#f57f17';
+    if (g === 'Fair') return '#e65100';
+    return '#c62828';
+  };
+
+  const sections = ['exterior', 'hardware', 'corners', 'stitching', 'handles', 'interior'];
+  const sectionRows = sections.map((key) => {
+    const s = report[key];
+    if (!s) return '';
+    return `<div class="sp-report-row">
+      <span class="sp-report-label">${key.charAt(0).toUpperCase() + key.slice(1)}</span>
+      <span class="sp-report-grade" style="color:${gradeColor(s.grade)}">${s.grade || '—'}</span>
+      <span class="sp-report-notes">${esc(s.notes || '')}</span>
+    </div>`;
+  }).join('');
+
+  const concerns = (report.concerns || []).map((c) => `<li>${esc(c)}</li>`).join('');
+  const authSignals = (report.authenticitySignals || []).map((s) => `<li>${esc(s)}</li>`).join('');
+
+  return `
+    <div class="sp-report">
+      <div class="sp-report-header">
+        <span class="sp-report-overall" style="color:${gradeColor(report.overallGrade)}">
+          ${esc(report.overallGrade || 'Unknown')}
+        </span>
+        <span class="sp-report-confidence">${Math.round((report.confidenceScore || 0) * 100)}% confidence</span>
+      </div>
+      <p class="sp-report-summary">${esc(report.summary || '')}</p>
+      ${sectionRows}
+      ${concerns ? `<div class="sp-report-section"><strong>Concerns:</strong><ul>${concerns}</ul></div>` : ''}
+      ${authSignals ? `<div class="sp-report-section"><strong>Authenticity:</strong><ul>${authSignals}</ul></div>` : ''}
+      ${report.recommendations ? `<p class="sp-report-rec"><strong>Recommendation:</strong> ${esc(report.recommendations)}</p>` : ''}
+    </div>
+  `;
 }
 
 function getPlatformFavicon(platform) {
