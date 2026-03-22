@@ -217,15 +217,15 @@ function showProduct(product) {
   // Price pill.
   if (priceVal > 0) pills.push({ label: `$${priceVal.toLocaleString()}`, type: 'price' });
 
-  // Color.
+  // Color — prefer structured data from page.
   const colors = product.color || product.attrs?.colors?.[0] || [...scanTitle(titleText, FILTER_COLORS)][0] || null;
   if (colors) pills.push({ label: colors, type: 'color' });
 
-  // Model.
+  // Model — prefer structured data from page.
   const model = product.model || [...scanTitle(titleText, FILTER_MODELS)][0] || null;
   if (model) pills.push({ label: model, type: 'model' });
 
-  // Material.
+  // Material — prefer structured data from page.
   const material = product.material || product.attrs?.materials?.[0] || [...scanTitle(titleText, FILTER_MATERIALS)][0] || null;
   if (material) pills.push({ label: material, type: 'material' });
 
@@ -237,14 +237,17 @@ function showProduct(product) {
   const category = product.category || product.categoryText || product.attrs?.categories?.[0] || null;
   if (category) pills.push({ label: category, type: 'category' });
 
-  // Detect brand from product data OR from title scanning.
+  // Use structured attributes first (from Item Specifics, AI, etc.), then fall back to title scan.
   const brand = product.brand || [...scanTitle(titleText, FILTER_BRANDS)][0] || null;
 
-  // Build details line: Brand · Model · Color · Price
+  // Build details line: Brand · Model · Color · Material · Size · Price
   const detailParts = [];
   if (brand) detailParts.push(`<strong>${esc(brand)}</strong>`);
   if (model) detailParts.push(esc(model));
   if (colors) detailParts.push(esc(colors));
+  if (material) detailParts.push(esc(material));
+  if (product.size) detailParts.push(esc(product.size));
+  if (product.hardware) detailParts.push(esc(product.hardware) + ' HW');
   if (priceVal > 0) detailParts.push(`<strong>$${priceVal.toLocaleString()}</strong>`);
   $details.innerHTML = detailParts.join(' · ');
 
@@ -505,7 +508,7 @@ const FILTER_MODELS = [
   're-edition','galleria','double bag','cleo','matinee',
   'tb bag','lola','olympia','note',
   // Gucci
-  'jacquard','soho','gg marmont','ophidia','dionysus','jackie','bamboo','horsebit','blondie','attache',
+  'jacquard','jaquard','soho','gg marmont','ophidia','dionysus','jackie','bamboo','horsebit','blondie','attache','gucci gg',
   // More
   'antigona','pandora','nightingale','shark','papier','motorcity','knife',
   'phantom','seau sangle','cabas','ava','triomphe','teen triomphe',
@@ -526,7 +529,7 @@ const DISPLAY_NAMES = {
   'off-white': 'Off-White', 'bottega veneta': 'Bottega Veneta',
   'saint laurent': 'Saint Laurent', 'christian dior': 'Christian Dior',
   'van cleef': 'Van Cleef & Arpels', 'dolce & gabbana': 'Dolce & Gabbana',
-  'coated canvas': 'Coated Canvas', 'wallet on chain': 'Wallet On Chain',
+  'coated canvas': 'Coated Canvas', 'wallet on chain': 'Wallet On Chain', 'jaquard': 'Jacquard', 'gucci gg': 'Gucci GG',
   'classic flap': 'Classic Flap', 'classic double flap': 'Classic Double Flap',
 };
 

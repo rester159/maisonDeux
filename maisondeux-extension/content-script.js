@@ -109,22 +109,51 @@
         currency: 'USD',
         url: window.location.href,
         platform: 'therealreal',
+        imageUrl: document.querySelector('.pdp-image img, [data-testid="product-image"] img, .product-media img')?.src || document.querySelector('meta[property="og:image"]')?.content || '',
       };
     }
 
     if (hostname.includes('ebay.com')) {
       const title = q('h1.x-item-title__mainTitle span, h1[itemprop="name"], .it-ttl, h1');
+
+      // Extract Item Specifics table into a structured object.
+      const specifics = {};
+      try {
+        const rows = document.querySelectorAll('.x-item-specifics .ux-labels-values__labels-content, .ux-labels-values, .itemAttr tr');
+        for (const row of rows) {
+          const labelEl = row.querySelector('.ux-labels-values__labels, .ux-labels-values__labels-content, td:first-child, th, dt');
+          const valueEl = row.querySelector('.ux-labels-values__values, .ux-labels-values__values-content, td:last-child, dd');
+          if (labelEl && valueEl) {
+            const label = labelEl.textContent.trim().toLowerCase().replace(/:$/, '');
+            const value = valueEl.textContent.trim();
+            if (label && value) specifics[label] = value;
+          }
+        }
+      } catch {}
+
+      // Build rich description from specifics.
+      const specificsText = Object.entries(specifics).map(([k, v]) => `${k}: ${v}`).join('. ');
+      const descText = descriptionText('.x-item-description', '#desc_div', '[itemprop="description"]');
+
       return {
-        brand: inferBrand(title),
+        brand: specifics['brand'] || inferBrand(title),
         productName: title,
         title,
-        description: descriptionText('.x-item-description', '#desc_div', '[itemprop="description"]', '.x-item-specifics', '.ux-labels-values'),
+        model: specifics['model'] || specifics['style'] || null,
+        color: specifics['color'] || null,
+        material: specifics['material'] || specifics['fabric type'] || null,
+        hardware: specifics['hardware material'] || specifics['hardware color'] || null,
+        size: specifics['size'] || null,
+        pattern: specifics['pattern'] || null,
+        department: specifics['department'] || null,
+        description: [specificsText, descText].filter(Boolean).join(' '),
         category: q('.breadcrumbs a:last-child, nav.breadcrumbs li:last-child'),
         conditionText: q('.x-item-condition span, .x-item-condition-text span, [data-testid="ux-icon-text"], .vi-cond'),
         price: price('.x-price-primary span, [itemprop="price"], .vi-price'),
         currency: document.querySelector('[itemprop="priceCurrency"]')?.getAttribute('content') || 'USD',
         url: window.location.href,
         platform: 'ebay',
+        imageUrl: document.querySelector('#icImg, .ux-image-carousel img, img[itemprop="image"]')?.src || '',
       };
     }
 
