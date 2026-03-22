@@ -205,11 +205,20 @@
     // Get the page title (h1).
     const title = document.querySelector('h1')?.textContent?.trim() || document.title || '';
 
-    // Get ALL text from the page — innerText for visible, plus textContent
-    // for hidden/collapsed sections (like TheRealReal's collapsed description).
-    const visibleText = document.body?.innerText?.slice(0, 3000) || '';
-    const hiddenText = document.body?.textContent?.slice(0, 5000) || '';
-    const bodyText = visibleText + ' ' + hiddenText;
+    // Get ALL text from the page. Collect text from individual elements
+    // to ensure proper spacing (textContent smashes words together).
+    const textParts = [];
+    try {
+      const els = document.querySelectorAll('h1, h2, h3, h4, p, li, span, td, dd, dt, a, label, div');
+      for (const el of els) {
+        // Skip elements with lots of children (navigation, wrappers).
+        if (el.children.length > 5) continue;
+        const t = el.textContent?.trim();
+        if (t && t.length > 1 && t.length < 300) textParts.push(t);
+        if (textParts.length > 200) break;
+      }
+    } catch {}
+    const bodyText = textParts.join(' ').slice(0, 5000);
 
     // Detect brand from known brands list.
     const brand = inferBrand(title) || inferBrand(bodyText);
