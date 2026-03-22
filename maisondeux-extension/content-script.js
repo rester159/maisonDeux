@@ -211,23 +211,36 @@
     }
 
     if (hostname.includes('vestiairecollective.com')) {
-      const priceText = q('.product__price, [data-testid="product-price"], .price-box');
-      const currencyMatch = priceText.match(/(€|£|\$)/);
+      // Grab all page text for attribute extraction.
+      const allPageText = grabAllText([
+        'h1', 'h2', 'h3', 'p', 'span', 'li',
+        '[data-testid]', '.product__description',
+        'section', 'main',
+      ]);
+
+      // Detect currency from page text.
       let currency = 'EUR';
-      if (currencyMatch) {
-        currency = currencyMatch[1] === '$' ? 'USD' : currencyMatch[1] === '£' ? 'GBP' : 'EUR';
-      }
+      if (allPageText.includes('CHF')) currency = 'CHF';
+      else if (allPageText.includes('$') || allPageText.includes('USD')) currency = 'USD';
+      else if (allPageText.includes('£') || allPageText.includes('GBP')) currency = 'GBP';
+
+      // Try to find brand from breadcrumbs or headings.
+      const brand = q('a[href*="/chanel/"], a[href*="/hermes/"], a[href*="/louis-vuitton/"], a[href*="/gucci/"], a[href*="/dior/"]')
+        || q('h2, [data-testid="designer-name"], .product__brand')
+        || '';
+
       return {
-        brand: q('.product__brand, [data-testid="designer-name"], .pdp-brand, a[href*="/designers/"]'),
-        productName: q('.product__name, [data-testid="product-title"], h1'),
-        title: q('.product__name, [data-testid="product-title"], h1'),
-        description: descriptionText('.product__description, [data-testid="product-description"], .pdp-description, [itemprop="description"]'),
-        category: q('.breadcrumb a:last-child, [data-testid="breadcrumb"]'),
-        conditionText: q('.product__condition, [data-testid="product-condition"]'),
-        price: price('.product__price, [data-testid="product-price"], .price-box'),
+        brand,
+        productName: q('h1, .product__name, [data-testid="product-title"]'),
+        title: q('h1, .product__name, [data-testid="product-title"]'),
+        description: allPageText,
+        category: q('.breadcrumb a:last-child, nav[aria-label="breadcrumb"] a:last-child'),
+        conditionText: q('[class*="condition"], [data-testid="product-condition"]'),
+        price: price('h1 + div span', '[data-testid="product-price"]', '.product__price', '.price-box', 'span[class*="price"]', 'span[class*="Price"]'),
         currency,
         url: window.location.href,
         platform: 'vestiaire',
+        imageUrl: document.querySelector('img[class*="product"], img[data-testid="product-image"], meta[property="og:image"]')?.src || document.querySelector('meta[property="og:image"]')?.content || '',
       };
     }
 

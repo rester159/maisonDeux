@@ -269,7 +269,8 @@ function showProduct(product) {
   if (material)           allPills.push({ label: material, type: 'material' });
   if (size)               allPills.push({ label: size, type: 'size' });
   if (hardware)           allPills.push({ label: hardware + ' HW', type: 'hardware' });
-  if (priceVal > 0)       allPills.push({ label: `$${priceVal.toLocaleString()}`, type: 'price' });
+  const currSym = (product.currency === 'EUR') ? '€' : (product.currency === 'GBP') ? '£' : (product.currency === 'CHF') ? 'CHF ' : '$';
+  if (priceVal > 0)       allPills.push({ label: `${currSym}${priceVal.toLocaleString()}`, type: 'price' });
   if (condition)          allPills.push({ label: condition, type: 'condition' });
   if (category)           allPills.push({ label: category, type: 'category' });
 
