@@ -54,6 +54,22 @@ chrome.storage.local.get('maisondeux_active', (data) => {
   updateView();
 });
 
+// Show API connection status.
+function updateApiStatus() {
+  chrome.storage.sync.get(null, (settings) => {
+    const $status = document.getElementById('api-status');
+    const apis = [
+      { key: 'anthropic_key', label: 'AI' },
+      { key: 'ebay_app_id', label: 'eBay' },
+    ];
+    $status.innerHTML = apis.map(({ key, label }) => {
+      const connected = !!(settings[key]);
+      return `<span class="sp-api-dot ${connected ? 'connected' : 'disconnected'}" title="${label}: ${connected ? 'connected' : 'not set'}">${label}</span>`;
+    }).join('');
+  });
+}
+updateApiStatus();
+
 // Ask background for current product and any existing results.
 chrome.runtime.sendMessage({ type: 'GET_CURRENT_PRODUCT' }, (response) => {
   console.log('[MaisonDeux][panel] GET_CURRENT_PRODUCT response:', response);

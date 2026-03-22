@@ -43,7 +43,19 @@ body {
 
 .sp-title { font-weight: 700; font-size: 15px; letter-spacing: 0.3px; }
 
-.sp-controls { display: flex; align-items: center; gap: 10px; }
+.sp-controls { display: flex; align-items: center; gap: 8px; }
+
+.sp-api-status { display: flex; gap: 4px; align-items: center; }
+.sp-api-dot {
+  display: flex; align-items: center; gap: 2px;
+  font-size: 9px; color: #a89888; letter-spacing: 0.3px;
+}
+.sp-api-dot::before {
+  content: ''; width: 6px; height: 6px; border-radius: 50%;
+  background: #555; flex-shrink: 0;
+}
+.sp-api-dot.connected::before { background: #4caf50; }
+.sp-api-dot.disconnected::before { background: #555; }
 
 .sp-icon-btn {
   background: none; border: none; color: #a89888;
