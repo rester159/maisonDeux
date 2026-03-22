@@ -211,24 +211,34 @@
     // Detect brand from known brands list.
     const brand = inferBrand(title) || inferBrand(bodyText);
 
-    // Detect price — find all price-like patterns and take the most prominent one.
+    // Detect price — find all price-like patterns.
     let detectedPrice = 0;
     let currency = 'USD';
     const pricePatterns = bodyText.match(/(?:[\$€£]|CHF|USD|EUR|GBP)\s*[\d,]+(?:\.\d{2})?/g)
       || bodyText.match(/[\d,]+(?:\.\d{2})?\s*(?:CHF|USD|EUR|GBP|€|£|\$)/g)
       || [];
     if (pricePatterns.length) {
-      // Take the first reasonable price (not too small, not navigation numbers).
+      // Collect all valid prices, pick the second one if multiple (sale price).
+      // If only one, use that.
+      const validPrices = [];
       for (const p of pricePatterns) {
         const val = parseFloat(p.replace(/[^0-9.]/g, '')) || 0;
-        if (val >= 10 && val < 1000000) {
-          detectedPrice = val;
-          if (p.includes('€') || p.includes('EUR')) currency = 'EUR';
-          else if (p.includes('£') || p.includes('GBP')) currency = 'GBP';
-          else if (p.includes('CHF')) currency = 'CHF';
-          else currency = 'USD';
-          break;
+        if (val >= 50 && val < 500000) {
+          let cur = 'USD';
+          if (p.includes('€') || p.includes('EUR')) cur = 'EUR';
+          else if (p.includes('£') || p.includes('GBP')) cur = 'GBP';
+          else if (p.includes('CHF')) cur = 'CHF';
+          validPrices.push({ val, cur });
         }
+      }
+      if (validPrices.length >= 2) {
+        // Two prices usually means original + sale — take the lower one.
+        const sorted = [...validPrices].sort((a, b) => a.val - b.val);
+        detectedPrice = sorted[0].val;
+        currency = sorted[0].cur;
+      } else if (validPrices.length === 1) {
+        detectedPrice = validPrices[0].val;
+        currency = validPrices[0].cur;
       }
     }
 
