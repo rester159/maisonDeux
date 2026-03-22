@@ -237,9 +237,12 @@ function showProduct(product) {
   const category = product.category || product.categoryText || product.attrs?.categories?.[0] || null;
   if (category) pills.push({ label: category, type: 'category' });
 
+  // Detect brand from product data OR from title scanning.
+  const brand = product.brand || [...scanTitle(titleText, FILTER_BRANDS)][0] || null;
+
   // Build details line: Brand · Model · Color · Price
   const detailParts = [];
-  if (product.brand) detailParts.push(`<strong>${esc(product.brand)}</strong>`);
+  if (brand) detailParts.push(`<strong>${esc(brand)}</strong>`);
   if (model) detailParts.push(esc(model));
   if (colors) detailParts.push(esc(colors));
   if (priceVal > 0) detailParts.push(`<strong>$${priceVal.toLocaleString()}</strong>`);
@@ -256,7 +259,7 @@ function showProduct(product) {
   }
 
   // Store detected attributes for auto-setting filters after results arrive.
-  currentProductAttrs = { brand: (product.brand || '').toLowerCase(), color: (colors || '').toLowerCase(), model: (model || '').toLowerCase(), material: (material || '').toLowerCase() };
+  currentProductAttrs = { brand: (brand || '').toLowerCase(), color: (colors || '').toLowerCase(), model: (model || '').toLowerCase(), material: (material || '').toLowerCase() };
   filtersAutoSet = false;
 }
 
@@ -512,13 +515,30 @@ const FILTER_MODELS = [
 ];
 const FILTER_CONDITIONS = ['new','like new','excellent','very good','good','fair','pre-owned','used','nwt','nwot'];
 
+// Display names for keywords that need special capitalization.
+const DISPLAY_NAMES = {
+  'gg supreme': 'GG Supreme', 'gg marmont': 'GG Marmont', 'ysl': 'YSL',
+  'louis vuitton': 'Louis Vuitton', 'michael kors': 'Michael Kors',
+  'kate spade': 'Kate Spade', 'tory burch': 'Tory Burch', 'miu miu': 'Miu Miu',
+  'jimmy choo': 'Jimmy Choo', 'marc jacobs': 'Marc Jacobs',
+  'alexander mcqueen': 'Alexander McQueen', 'stella mccartney': 'Stella McCartney',
+  'rick owens': 'Rick Owens', 'chrome hearts': 'Chrome Hearts',
+  'off-white': 'Off-White', 'bottega veneta': 'Bottega Veneta',
+  'saint laurent': 'Saint Laurent', 'christian dior': 'Christian Dior',
+  'van cleef': 'Van Cleef & Arpels', 'dolce & gabbana': 'Dolce & Gabbana',
+  'coated canvas': 'Coated Canvas', 'wallet on chain': 'Wallet On Chain',
+  'classic flap': 'Classic Flap', 'classic double flap': 'Classic Double Flap',
+};
+
 function scanTitle(title, keywords) {
   const lower = (title || '').toLowerCase();
   const found = new Set();
   for (const kw of keywords) {
-    // Word boundary check to avoid partial matches.
     const regex = new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
-    if (regex.test(lower)) found.add(kw.charAt(0).toUpperCase() + kw.slice(1));
+    if (regex.test(lower)) {
+      const display = DISPLAY_NAMES[kw] || kw.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      found.add(display);
+    }
   }
   return found;
 }
