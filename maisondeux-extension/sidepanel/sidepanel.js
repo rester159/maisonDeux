@@ -14,8 +14,8 @@ const $stateIdle    = document.getElementById('state-idle');
 const $stateScanning = document.getElementById('state-scanning');
 const $scanStatus   = document.getElementById('scan-status');
 const $productCtx   = document.getElementById('product-context');
-const $productPlatform = document.getElementById('product-platform');
-const $productName  = document.getElementById('product-name');
+const $productPlatformIcon = document.getElementById('product-platform-icon');
+const $productNameText = document.getElementById('product-name-text');
 const $productPrice = document.getElementById('product-price');
 const $productAttrs = document.getElementById('product-attrs');
 const $filterSection = document.getElementById('filter-section');
@@ -181,8 +181,16 @@ function showProduct(product) {
   currentProduct = product;
   $stateIdle.classList.add('hidden');
   $productCtx.classList.remove('hidden');
-  $productPlatform.textContent = product.platform || product.source || '';
-  $productName.textContent = [product.brand, product.productName || product.title].filter(Boolean).join(' — ');
+  const platform = product.platform || product.source || '';
+  const favicon = getPlatformFavicon(platform);
+  if (favicon) {
+    $productPlatformIcon.src = favicon;
+    $productPlatformIcon.alt = platform;
+    $productPlatformIcon.style.display = '';
+  } else {
+    $productPlatformIcon.style.display = 'none';
+  }
+  $productNameText.textContent = [product.brand, product.productName || product.title].filter(Boolean).join(' — ');
 
   // Format price.
   const priceVal = parseFloat(String(product.price || '').replace(/[^0-9.]/g, '')) || 0;

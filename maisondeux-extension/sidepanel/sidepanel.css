@@ -97,10 +97,12 @@ body {
   border-radius: 8px;
 }
 
-.sp-viewing { font-size: 10px; color: #999; text-transform: capitalize; margin-bottom: 2px; }
-.sp-viewing span { font-weight: 600; color: #6b5b4e; }
+#product-name {
+  font-size: 13px; font-weight: 700; color: #2c2218; margin-bottom: 2px;
+  display: flex; align-items: center; gap: 6px;
+}
 
-#product-name { font-size: 13px; font-weight: 700; color: #2c2218; margin-bottom: 2px; }
+#product-name .sp-platform-icon { width: 16px; height: 16px; flex-shrink: 0; }
 
 .sp-price { font-size: 15px; font-weight: 700; color: #2c2218; margin-bottom: 6px; }
 
