@@ -26,12 +26,29 @@ body {
   width: 100%;
 }
 
+.settings-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}
+
 h1 {
   font-size: 22px;
   font-weight: 700;
   color: #4a3728;
-  margin-bottom: 24px;
 }
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 28px;
+  color: #999;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.close-btn:hover { color: #4a3728; }
 
 h2 {
   font-size: 15px;

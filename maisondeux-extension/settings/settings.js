@@ -23,6 +23,9 @@ const $minRelevance = document.getElementById('min-relevance');
 const $relevanceValue = document.getElementById('relevance-value');
 const $saveBtn = document.getElementById('save-btn');
 const $status = document.getElementById('status');
+const $closeBtn = document.getElementById('close-btn');
+
+$closeBtn.addEventListener('click', () => window.close());
 
 // ---- Load ----
 
