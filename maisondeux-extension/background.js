@@ -81,28 +81,40 @@ async function handleProductDetected(product, tab) {
   const tabId = tab.id;
   console.log(`[MaisonDeux][bg] Product: ${product.brand || ''} ${product.productName || product.title || ''}`);
 
-  // Store product for this tab.
-  tabProducts.set(tabId, product);
-
-  // Notify side panel.
-  broadcast({ type: 'PRODUCT_DETECTED', payload: product });
-
-  // Search ALL platforms including the current one (find better deals on same site).
-  const platforms = [...ALL_PLATFORMS];
-
-  broadcast({ type: 'SEARCH_STARTED', payload: { platformCount: platforms.length } });
-
-
   // Load credentials.
   const creds = await loadCredentials();
-  console.log('[MaisonDeux][bg] Credentials:', JSON.stringify({
-    ebay: !!creds.ebay?.appId,
-    serpapi: !!creds.serpApiKey,
-  }));
+  const hasAI = !!creds.anthropicKey;
+  console.log(`[MaisonDeux][bg] AI: ${hasAI}, eBay: ${!!creds.ebay?.appId}`);
 
-  // Build search query.
-  const query = [product.brand, product.productName || product.title]
-    .filter(Boolean).join(' ').trim().slice(0, 120);
+  // Step 1: Classify source product (AI if available, else heuristic).
+  let classifiedProduct = product;
+  if (hasAI) {
+    try {
+      console.log('[MaisonDeux][bg] Classifying source product with AI...');
+      const aiAttrs = await classifyProductAI(product, creds.anthropicKey);
+      classifiedProduct = { ...product, ...aiAttrs, _aiClassified: true };
+      console.log('[MaisonDeux][bg] AI classification:', JSON.stringify(aiAttrs));
+    } catch (err) {
+      console.warn('[MaisonDeux][bg] AI classification failed:', err.message);
+    }
+  }
+
+  // Store product for this tab.
+  tabProducts.set(tabId, classifiedProduct);
+
+  // Notify side panel.
+  broadcast({ type: 'PRODUCT_DETECTED', payload: classifiedProduct });
+
+  // Search ALL platforms including the current one.
+  const platforms = [...ALL_PLATFORMS];
+  broadcast({ type: 'SEARCH_STARTED', payload: { platformCount: platforms.length } });
+
+  // Build search query from classified attributes.
+  const query = [
+    classifiedProduct.brand,
+    classifiedProduct.model,
+    classifiedProduct.productName || classifiedProduct.title,
+  ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 120);
 
   console.log(`[MaisonDeux][bg] Query: "${query}"`);
 
@@ -115,14 +127,9 @@ async function handleProductDetected(product, tab) {
       console.log(`[MaisonDeux][bg] ${platform}: ${results.length} results`);
 
       if (results.length) {
-        // Pass results through with a default score.
-        const scored = results.map((r) => ({
-          ...r,
-          relevanceScore: 0.5,
-          relevanceLabel: 'Match',
-        }));
+        // Score results against source.
+        const scored = results.map((r) => scoreResult(r, classifiedProduct));
         allResults.push(...scored);
-        console.log(`[MaisonDeux][bg] Broadcasting ${scored.length} results for ${platform}`);
         broadcast({
           type: 'DEAL_RESULTS',
           payload: { listings: scored, platform, complete: false },
@@ -134,6 +141,25 @@ async function handleProductDetected(product, tab) {
   });
 
   await Promise.allSettled(searches);
+
+  // Step 2: If AI available, batch-classify top results for better scoring.
+  if (hasAI && allResults.length > 0) {
+    try {
+      console.log(`[MaisonDeux][bg] Batch classifying ${Math.min(allResults.length, 10)} results with AI...`);
+      const topResults = allResults.slice(0, 10);
+      const aiClassified = await classifyBatchAI(topResults, creds.anthropicKey);
+
+      // Merge AI attributes back and re-score.
+      for (let i = 0; i < aiClassified.length && i < topResults.length; i++) {
+        Object.assign(allResults[i], aiClassified[i]);
+        const rescore = scoreResult(allResults[i], classifiedProduct);
+        allResults[i].relevanceScore = rescore.relevanceScore;
+        allResults[i].relevanceLabel = rescore.relevanceLabel;
+      }
+    } catch (err) {
+      console.warn('[MaisonDeux][bg] Batch classification failed:', err.message);
+    }
+  }
 
   // Final results — sort by relevance.
   allResults.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
@@ -628,6 +654,7 @@ function loadCredentials() {
         grailed: {},
         mercari: {},
         serpApiKey: settings.serpapi_key || '',
+        anthropicKey: settings.anthropic_key || '',
       });
     });
   });
@@ -639,6 +666,150 @@ function loadCredentials() {
 
 function broadcast(message) {
   chrome.runtime.sendMessage(message).catch(() => {});
+}
+
+// ---------------------------------------------------------------------------
+// AI Classification (Anthropic Claude API)
+// ---------------------------------------------------------------------------
+
+const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
+const ANTHROPIC_VERSION = '2023-06-01';
+
+const SOURCE_SYSTEM_PROMPT = `You are a luxury goods authentication and classification expert working for MaisonDeux, a second-hand marketplace aggregator. Analyze the product listing and extract every identifiable attribute into a standardized schema.
+
+Return ONLY valid JSON. No markdown fences, no backticks, no explanation.
+
+Classify into this schema:
+{
+  "brand": "string or null",
+  "model": "string or null",
+  "category": "Handbags | Jewelry | Watches | Shoes | Clothing | Accessories | null",
+  "color": "string or null",
+  "colorFamily": "Neutral | Warm | Cool | Metallic | null",
+  "material": "string or null",
+  "hardware": "Gold | Silver | Ruthenium | Palladium | Rose Gold | null",
+  "size": "string or null",
+  "condition": "New | Excellent | Very Good | Good | Fair | null",
+  "authenticated": true or false,
+  "listedPrice": number or null,
+  "currency": "USD | EUR | GBP",
+  "estimatedRetail": number or null,
+  "_confidence": 0.0 to 1.0
+}
+
+Rules:
+- Normalize colors to English: "Noir" → "Black", "GHW" → hardware: "Gold"
+- Be specific on models: "Classic Double Flap" not "Flap Bag"
+- Distinguish material subtypes: Lambskin vs Caviar vs Calfskin
+- Map conditions: NWT=New, Like New/Mint=Excellent, Pre-Owned=Good`;
+
+const BATCH_SYSTEM_PROMPT = `You are a luxury goods classifier for MaisonDeux. Classify EACH listing into structured attributes.
+
+Return ONLY a JSON array. No markdown, no explanation. Each element:
+{
+  "brand": "string or null",
+  "model": "string or null",
+  "category": "Handbags | Jewelry | Watches | Shoes | Clothing | Accessories | null",
+  "color": "string or null",
+  "material": "string or null",
+  "hardware": "Gold | Silver | Ruthenium | Palladium | Rose Gold | null",
+  "condition": "New | Excellent | Very Good | Good | Fair | null",
+  "listedPrice": number or null,
+  "_confidence": 0.0 to 1.0
+}
+
+Rules:
+- Normalize all colors to English. Decode abbreviations: GHW=Gold Hardware, SHW=Silver, NWT=New With Tags.
+- Each listing is independent.
+- Text-only confidence typically 0.5–0.8.`;
+
+/**
+ * Classify a source product using Claude Vision.
+ */
+async function classifyProductAI(product, apiKey) {
+  const content = [];
+
+  // Include image if available.
+  if (product.imageUrl) {
+    content.push({
+      type: 'image',
+      source: { type: 'url', url: product.imageUrl },
+    });
+  }
+
+  content.push({
+    type: 'text',
+    text: [
+      `Platform: ${product.platform || product.source || 'Unknown'}`,
+      `Title: ${product.productName || product.title || 'Unknown'}`,
+      product.brand ? `Brand (from page): ${product.brand}` : null,
+      `Listed Price: ${product.price || 'Unknown'}`,
+      product.conditionText ? `Condition (from page): ${product.conditionText}` : null,
+      product.categoryText || product.category ? `Category (from page): ${product.categoryText || product.category}` : null,
+      product.description ? `Description: ${product.description.slice(0, 1500)}` : null,
+    ].filter(Boolean).join('\n\n'),
+  });
+
+  const res = await fetch(ANTHROPIC_API, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': ANTHROPIC_VERSION,
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-sonnet-4-5-20250514',
+      max_tokens: 1000,
+      system: SOURCE_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content }],
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Anthropic ${res.status}`);
+  const data = await res.json();
+  const text = data.content?.[0]?.text || '';
+  return parseAIJSON(text);
+}
+
+/**
+ * Batch-classify search results using Claude.
+ */
+async function classifyBatchAI(listings, apiKey) {
+  const listingText = listings.slice(0, 10).map((l, i) =>
+    `Listing ${i + 1}:\nTitle: ${l.title || ''}\nPrice: ${l.price || ''}\nCondition: ${l.condition || ''}\nPlatform: ${l.platform || ''}`
+  ).join('\n\n');
+
+  const res = await fetch(ANTHROPIC_API, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': ANTHROPIC_VERSION,
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: 'claude-haiku-4-5-20241022',
+      max_tokens: 2000,
+      system: BATCH_SYSTEM_PROMPT,
+      messages: [{ role: 'user', content: listingText }],
+    }),
+  });
+
+  if (!res.ok) throw new Error(`Anthropic ${res.status}`);
+  const data = await res.json();
+  const text = data.content?.[0]?.text || '';
+  const parsed = parseAIJSON(text);
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+/**
+ * Parse JSON from Claude response, stripping markdown fences.
+ */
+function parseAIJSON(text) {
+  let cleaned = text.trim();
+  cleaned = cleaned.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '');
+  return JSON.parse(cleaned);
 }
 
 // ---------------------------------------------------------------------------
