@@ -87,9 +87,8 @@ async function handleProductDetected(product, tab) {
   // Notify side panel.
   broadcast({ type: 'PRODUCT_DETECTED', payload: product });
 
-  // Determine platforms to search.
-  const currentPlatform = product.platform || product.source || '';
-  const platforms = ALL_PLATFORMS.filter((p) => p !== currentPlatform);
+  // Search ALL platforms including the current one (find better deals on same site).
+  const platforms = [...ALL_PLATFORMS];
 
   broadcast({ type: 'SEARCH_STARTED', payload: { platformCount: platforms.length } });
 

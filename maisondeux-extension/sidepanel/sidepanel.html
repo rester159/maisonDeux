@@ -60,23 +60,21 @@
       <select id="filter-condition" class="sp-filter"><option value="">Any Condition</option></select>
       <div class="sp-filter-row">
         <label class="sp-hint">Sort:</label>
-        <select id="sort-by" class="sp-filter">
+        <select id="sort-by" class="sp-filter" style="flex:1">
           <option value="relevance" selected>Relevance</option>
-          <option value="price-asc">Price: Low to High</option>
-          <option value="price-desc">Price: High to Low</option>
-          <option value="savings">Biggest Savings</option>
+          <option value="price-asc">Price ↑</option>
+          <option value="price-desc">Price ↓</option>
+          <option value="savings">Savings</option>
         </select>
-      </div>
-      <div class="sp-filter-row">
-        <label class="sp-hint">Min relevance:</label>
-        <select id="filter-relevance" class="sp-filter">
+        <label class="sp-hint">Min:</label>
+        <select id="filter-relevance" class="sp-filter" style="width:55px">
           <option value="0" selected>Any</option>
           <option value="0.3">30%</option>
           <option value="0.5">50%</option>
           <option value="0.7">70%</option>
           <option value="0.85">85%</option>
         </select>
-        <a href="#" id="clear-filters" class="sp-clear-filters hidden">Clear filters</a>
+        <a href="#" id="clear-filters" class="sp-clear-filters hidden">Clear</a>
       </div>
     </div>
   </section>

@@ -123,26 +123,30 @@ body {
 /* ---- Filters ---- */
 
 .sp-filters {
-  padding: 6px 10px;
-  display: flex; flex-wrap: wrap; gap: 4px;
+  padding: 6px 8px;
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 4px;
   border-bottom: 1px solid #e8e4de;
 }
 
 .sp-filter {
-  padding: 3px 6px; border: 1px solid #d0c8be;
+  padding: 3px 4px; border: 1px solid #d0c8be;
   border-radius: 4px; background: #fff;
-  font-size: 11px; font-family: inherit;
-  max-width: 120px;
+  font-size: 10px; font-family: inherit;
+  width: 100%;
+  min-width: 0;
 }
 .sp-filter:focus { outline: none; border-color: #4a3728; }
 .sp-filter.active { border-color: #2c2218; border-width: 2px; }
 
 .sp-filter-row {
-  display: flex; align-items: center; gap: 6px; width: 100%;
-  font-size: 11px;
+  grid-column: span 3;
+  display: flex; align-items: center; gap: 6px;
+  font-size: 10px;
 }
 
-.sp-clear-filters { font-size: 11px; color: #c62828; text-decoration: underline; cursor: pointer; }
+.sp-clear-filters { font-size: 10px; color: #c62828; text-decoration: underline; cursor: pointer; margin-left: auto; }
 
 /* ---- Results ---- */
 
