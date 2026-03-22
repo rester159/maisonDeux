@@ -419,10 +419,19 @@ function extractFromHtml(platform, html, baseUrl) {
         || surroundingHtml.match(/>([A-Z][^<]{10,100})</);
       const title = titleMatch ? titleMatch[1].trim() : '';
 
-      // Extract price.
-      const priceMatch = surroundingHtml.match(/[\$€£]\s*[\d,]+(?:\.\d{2})?/)
-        || surroundingHtml.match(/(\d{1,6}(?:\.\d{2})?)\s*(?:USD|EUR|GBP)/);
-      const priceText = priceMatch ? priceMatch[0] : '';
+      // Extract price — try multiple patterns.
+      const priceMatch = surroundingHtml.match(/\$\s*[\d,]+(?:\.\d{2})?/)
+        || surroundingHtml.match(/[\$€£]\s*[\d,]+(?:\.\d{2})?/)
+        || surroundingHtml.match(/"price"\s*:\s*"?\$?([\d,.]+)"?/)
+        || surroundingHtml.match(/"amount"\s*:\s*"?([\d,.]+)"?/)
+        || surroundingHtml.match(/"value"\s*:\s*"?([\d,.]+)"?/)
+        || surroundingHtml.match(/data-price="([\d,.]+)"/)
+        || surroundingHtml.match(/(\d{2,6}(?:\.\d{2})?)\s*(?:USD|EUR|GBP)/);
+      let priceText = priceMatch ? (priceMatch[1] || priceMatch[0]) : '';
+      // Ensure it has a $ prefix for display.
+      if (priceText && !priceText.startsWith('$') && !priceText.startsWith('€') && !priceText.startsWith('£')) {
+        priceText = '$' + priceText;
+      }
       const priceValue = parseFloat(priceText.replace(/[^0-9.]/g, '')) || 0;
 
       // Extract image.
