@@ -238,6 +238,9 @@ function showProduct(product) {
     chip.textContent = pill.label;
     $productAttrs.appendChild(chip);
   }
+
+  // Auto-set filters to match the current product's attributes.
+  autoSetFilters(product, { colors, model, material, condition });
 }
 
 function showScanning() {
@@ -494,6 +497,34 @@ function scanTitle(title, keywords) {
 }
 
 // populateFilterOptions is now inline in renderResults for cascading behavior.
+
+/**
+ * Auto-set filter dropdowns to match the source product's detected attributes.
+ * Only sets if the filter is currently at its default ("") value.
+ */
+function autoSetFilters(product, detected) {
+  const brand = (product.brand || '').toLowerCase();
+  const platform = (product.platform || product.source || '').toLowerCase();
+
+  if (filterEls.brand && !filterEls.brand.value && brand) {
+    filterEls.brand.value = brand;
+  }
+  if (filterEls.store && !filterEls.store.value && platform) {
+    // Don't auto-set store — user wants to see OTHER stores.
+  }
+  if (filterEls.color && !filterEls.color.value && detected.colors) {
+    filterEls.color.value = (detected.colors || '').toLowerCase();
+  }
+  if (filterEls.model && !filterEls.model.value && detected.model) {
+    filterEls.model.value = (detected.model || '').toLowerCase();
+  }
+  if (filterEls.material && !filterEls.material.value && detected.material) {
+    filterEls.material.value = (detected.material || '').toLowerCase();
+  }
+  // Don't auto-set condition — user wants to see all conditions.
+
+  updateFilterStyles();
+}
 
 const STORE_NAMES = {
   ebay: 'eBay',
