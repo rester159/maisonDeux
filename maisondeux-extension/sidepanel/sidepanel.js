@@ -229,6 +229,10 @@ function showProduct(product) {
   const material = product.material || product.attrs?.materials?.[0] || [...scanTitle(titleText, FILTER_MATERIALS)][0] || null;
   if (material) pills.push({ label: material, type: 'material' });
 
+  // Hardware — detect from structured data or description.
+  const hwRaw = product.hardware || [...scanTitle(titleText, FILTER_HARDWARE)][0] || null;
+  const hardware = hwRaw ? (hwRaw.toLowerCase().includes('gold') ? 'Gold' : hwRaw.toLowerCase().includes('silver') ? 'Silver' : hwRaw.toLowerCase().includes('palladium') ? 'Palladium' : hwRaw.toLowerCase().includes('ruthenium') ? 'Ruthenium' : hwRaw.toLowerCase().includes('rose') ? 'Rose Gold' : hwRaw) : null;
+
   // Condition.
   const condition = product.conditionText || product.condition || product.attrs?.conditions?.[0] || [...scanTitle(titleText, FILTER_CONDITIONS)][0] || null;
   if (condition) pills.push({ label: condition, type: 'condition' });
@@ -237,8 +241,8 @@ function showProduct(product) {
   const category = product.category || product.categoryText || product.attrs?.categories?.[0] || null;
   if (category) pills.push({ label: category, type: 'category' });
 
-  // Use structured attributes first (from Item Specifics, AI, etc.), then fall back to title scan.
-  const brand = product.brand || [...scanTitle(titleText, FILTER_BRANDS)][0] || null;
+  // Use structured attributes first, normalize brand.
+  const brand = normalizeBrand(product.brand || [...scanTitle(titleText, FILTER_BRANDS)][0] || null);
 
   // Build details line: Brand · Model · Color · Material · Size · Price
   const detailParts = [];
@@ -247,7 +251,7 @@ function showProduct(product) {
   if (colors) detailParts.push(esc(colors));
   if (material) detailParts.push(esc(material));
   if (product.size) detailParts.push(esc(product.size));
-  if (product.hardware) detailParts.push(esc(product.hardware) + ' HW');
+  if (hardware) detailParts.push(esc(hardware) + ' HW');
   if (priceVal > 0) detailParts.push(`<strong>$${priceVal.toLocaleString()}</strong>`);
   $details.innerHTML = detailParts.join(' · ');
 
@@ -328,9 +332,15 @@ function renderResults() {
         const store = STORE_NAMES[r.platform] || r.platform || '';
         if (store) available.add(store);
       } else {
-        if (r[key]) available.add(r[key]);
-        if (keywordList) scanTitle(r.title || '', keywordList).forEach((v) => available.add(v));
-        if (key === 'condition' && r.condition) available.add(r.condition);
+        if (key === 'brand') {
+          const b = normalizeBrand(r[key]) || normalizeBrand(r.brand);
+          if (b) available.add(b);
+          if (keywordList) scanTitle(r.title || '', keywordList).forEach((v) => available.add(normalizeBrand(v) || v));
+        } else {
+          if (r[key]) available.add(r[key]);
+          if (keywordList) scanTitle(r.title || '', keywordList).forEach((v) => available.add(v));
+          if (key === 'condition' && r.condition) available.add(r.condition);
+        }
       }
     }
 
@@ -482,8 +492,8 @@ function renderListing(listing) {
 }
 
 // Inline keyword lists for title scanning.
-const FILTER_COLORS = ['black','white','beige','brown','red','pink','blue','green','grey','gray','gold','silver','orange','yellow','purple','navy','cream','ivory','tan','nude','burgundy','cognac'];
-const FILTER_MATERIALS = ['leather','canvas','suede','silk','denim','tweed','nylon','velvet','satin','wool','cashmere','cotton','patent','lambskin','caviar','calfskin','gg supreme','monogram','damier','epi','vernis','empreinte','coated canvas'];
+const FILTER_COLORS = ['black','noir','white','blanc','beige','brown','marron','red','rouge','pink','rose','blue','bleu','green','vert','grey','gray','gold','silver','orange','yellow','purple','navy','cream','ivory','tan','nude','burgundy','cognac','chocolate','camel','taupe','bordeaux','teal','coral','rust','olive','khaki','charcoal','champagne'];
+const FILTER_MATERIALS = ['leather','canvas','suede','silk','denim','tweed','nylon','velvet','satin','wool','cashmere','cotton','patent','lambskin','caviar','calfskin','clemence','togo','epsom','swift','barenia','evercolor','box calf','chamonix','veau','chevre','goatskin','exotic','python','crocodile','alligator','ostrich','gg supreme','monogram','damier','epi','vernis','empreinte','coated canvas','raffia','straw','rubber','pvc','nappa'];
 const FILTER_BRANDS = [
   'chanel','louis vuitton','gucci','hermes','hermès','dior','prada','fendi','bottega veneta',
   'balenciaga','saint laurent','ysl','celine','céline','loewe','valentino','burberry',
@@ -513,9 +523,10 @@ const FILTER_MODELS = [
   'antigona','pandora','nightingale','shark','papier','motorcity','knife',
   'phantom','seau sangle','cabas','ava','triomphe','teen triomphe',
   'flamenco','puzzle','hammock','gate','basket',
-  'mini kelly','kelly pochette','birkin 25','birkin 30','birkin 35',
+  'mini kelly','kelly pochette','birkin 25','birkin 30','birkin 35','picotin','picotin lock',
   'chanel 19','classic double flap','jumbo','maxi','east west',
 ];
+const FILTER_HARDWARE = ['gold hardware','gold-plated hardware','gold-plated','ghw','silver hardware','shw','palladium hardware','phw','ruthenium hardware','rhw','rose gold hardware','rghw'];
 const FILTER_CONDITIONS = ['new','like new','excellent','very good','good','fair','pre-owned','used','nwt','nwot'];
 
 // Display names for keywords that need special capitalization.
@@ -530,6 +541,24 @@ const DISPLAY_NAMES = {
   'saint laurent': 'Saint Laurent', 'christian dior': 'Christian Dior',
   'van cleef': 'Van Cleef & Arpels', 'dolce & gabbana': 'Dolce & Gabbana',
   'coated canvas': 'Coated Canvas', 'wallet on chain': 'Wallet On Chain', 'jaquard': 'Jacquard', 'gucci gg': 'Gucci GG',
+  'hermès': 'Hermès', 'hermes': 'Hermès', 'céline': 'Celine', 'celine': 'Celine',
+  'chloé': 'Chloé', 'chloe': 'Chloé', 'alaïa': 'Alaïa', 'alaia': 'Alaïa',
+  'totême': 'Totême', 'toteme': 'Totême', 'comme des garçons': 'Comme des Garçons',
+  'louis vuitton': 'Louis Vuitton', 'gucci': 'Gucci', 'chanel': 'Chanel',
+  'dior': 'Dior', 'prada': 'Prada', 'fendi': 'Fendi', 'versace': 'Versace',
+  'balenciaga': 'Balenciaga', 'valentino': 'Valentino', 'burberry': 'Burberry',
+  'givenchy': 'Givenchy', 'loewe': 'Loewe', 'cartier': 'Cartier', 'rolex': 'Rolex',
+  'bottega veneta': 'Bottega Veneta', 'saint laurent': 'Saint Laurent',
+  'ferragamo': 'Ferragamo', 'coach': 'Coach', 'goyard': 'Goyard',
+  // French colors → English
+  'noir': 'Black', 'blanc': 'White', 'bleu': 'Blue', 'rouge': 'Red',
+  'vert': 'Green', 'rose': 'Pink', 'marron': 'Brown',
+  // Hermès leathers
+  'clemence': 'Clemence', 'togo': 'Togo', 'epsom': 'Epsom', 'swift': 'Swift',
+  'barenia': 'Barenia', 'evercolor': 'Evercolor', 'box calf': 'Box Calf',
+  'chevre': 'Chèvre', 'chamonix': 'Chamonix', 'veau': 'Veau',
+  // Models
+  'picotin lock': 'Picotin Lock', 'picotin': 'Picotin',
   'classic flap': 'Classic Flap', 'classic double flap': 'Classic Double Flap',
 };
 
@@ -548,6 +577,34 @@ function scanTitle(title, keywords) {
 
 // populateFilterOptions is now inline in renderResults for cascading behavior.
 
+
+// Canonical brand mapping — all variations → single canonical name.
+const CANONICAL_BRANDS = {
+  'hermes': 'Hermès', 'hermès': 'Hermès', 'hermés': 'Hermès',
+  'celine': 'Celine', 'céline': 'Celine',
+  'chloe': 'Chloé', 'chloé': 'Chloé',
+  'alaia': 'Alaïa', 'alaïa': 'Alaïa',
+  'toteme': 'Totême', 'totême': 'Totême',
+  'ysl': 'Saint Laurent', 'yves saint laurent': 'Saint Laurent', 'saint laurent': 'Saint Laurent',
+  'christian dior': 'Dior', 'dior': 'Dior',
+  'bottega': 'Bottega Veneta', 'bottega veneta': 'Bottega Veneta',
+  'louis vuitton': 'Louis Vuitton', 'lv': 'Louis Vuitton', 'vuitton': 'Louis Vuitton',
+  'miu miu': 'Miu Miu', 'jimmy choo': 'Jimmy Choo',
+  'ferragamo': 'Ferragamo', 'salvatore ferragamo': 'Ferragamo',
+  'alexander mcqueen': 'Alexander McQueen', 'mcqueen': 'Alexander McQueen',
+  'off-white': 'Off-White', 'off white': 'Off-White',
+  'rick owens': 'Rick Owens', 'chrome hearts': 'Chrome Hearts',
+  'marc jacobs': 'Marc Jacobs', 'michael kors': 'Michael Kors',
+  'kate spade': 'Kate Spade', 'tory burch': 'Tory Burch',
+  'stella mccartney': 'Stella McCartney', 'dolce & gabbana': 'Dolce & Gabbana',
+  'van cleef': 'Van Cleef & Arpels', 'comme des garcons': 'Comme des Garçons',
+};
+
+function normalizeBrand(brand) {
+  if (!brand) return null;
+  const lower = brand.toLowerCase().trim();
+  return CANONICAL_BRANDS[lower] || brand.trim();
+}
 
 const STORE_NAMES = {
   ebay: 'eBay',
