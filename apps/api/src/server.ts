@@ -1293,6 +1293,14 @@ app.get("/api/v1/admin/metrics", async () => {
   };
 });
 
+// Dev dashboard admin routes (only when explicitly enabled).
+if (process.env.DEV_DASHBOARD_ENABLED === "true") {
+  import("./routes/dev-admin").then((mod) => {
+    app.register(mod.default, { prefix: "/dev-admin" });
+    app.log.info("Dev dashboard admin routes enabled at /dev-admin/*");
+  });
+}
+
 const port = Number(process.env.PORT ?? 3000);
 ensureMarketplaceConfigs()
   .then(() => app.listen({ host: "0.0.0.0", port }))

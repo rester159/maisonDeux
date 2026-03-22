@@ -1,0 +1,93 @@
+{
+  "manifest_version": 3,
+  "name": "MaisonDeux",
+  "version": "0.1.0",
+  "description": "Second-hand luxury deal finder — compare prices across resale platforms.",
+  "permissions": [
+    "offscreen",
+    "activeTab",
+    "storage",
+    "scripting",
+    "declarativeNetRequest"
+  ],
+  "host_permissions": [
+    "*://*.therealreal.com/*",
+    "*://*.ebay.com/*",
+    "*://*.poshmark.com/*",
+    "*://*.vestiairecollective.com/*",
+    "*://*.grailed.com/*",
+    "*://*.mercari.com/*",
+    "*://*.shopgoodwill.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js",
+    "type": "module"
+  },
+  "content_scripts": [
+    {
+      "matches": ["*://*.therealreal.com/products/*"],
+      "js": ["content-script.js"],
+      "css": ["content-style.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.ebay.com/itm/*"],
+      "js": ["content-script.js"],
+      "css": ["content-style.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.poshmark.com/listing/*"],
+      "js": ["content-script.js"],
+      "css": ["content-style.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.vestiairecollective.com/*"],
+      "js": ["content-script.js"],
+      "css": ["content-style.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.grailed.com/listings/*"],
+      "js": ["content-script.js"],
+      "css": ["content-style.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.mercari.com/item/*"],
+      "js": ["content-script.js"],
+      "css": ["content-style.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": ["*://*.shopgoodwill.com/item/*"],
+      "js": ["content-script.js"],
+      "css": ["content-style.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "declarative_net_request": {
+    "rule_resources": [
+      {
+        "id": "header_strip",
+        "enabled": true,
+        "path": "rules.json"
+      }
+    ]
+  },
+  "action": {
+    "default_popup": "popup/popup.html",
+    "default_icon": {
+      "16": "icons/icon-16.png",
+      "48": "icons/icon-48.png",
+      "128": "icons/icon-128.png"
+    }
+  },
+  "options_page": "settings/settings.html",
+  "icons": {
+    "16": "icons/icon-16.png",
+    "48": "icons/icon-48.png",
+    "128": "icons/icon-128.png"
+  }
+}

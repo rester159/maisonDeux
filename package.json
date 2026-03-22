@@ -13,6 +13,7 @@
     "dev:worker": "npm run dev:worker -w apps/api",
     "dev:mobile": "npm run start -w apps/mobile",
     "dev:web": "npm run dev -w @luxefinder/web",
+    "dev:dashboard": "npm run dev -w @luxefinder/dev-dashboard",
     "build:web": "npm run build -w @luxefinder/web",
     "lint": "npm run lint --workspaces",
     "typecheck": "npm run typecheck --workspaces"

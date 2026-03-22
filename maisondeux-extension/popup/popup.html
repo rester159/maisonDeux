@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<!--
+  popup.html
+  Browser action popup for MaisonDeux. Shows deal comparisons for the
+  product on the currently active tab.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MaisonDeux</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header class="popup-header">
+    <h1>MaisonDeux</h1>
+    <button id="settings-btn" title="Settings" aria-label="Settings">&#9881;</button>
+  </header>
+
+  <main id="content">
+    <div id="loading" class="state">
+      <p>Scanning for deals&hellip;</p>
+    </div>
+
+    <div id="no-product" class="state hidden">
+      <p>No product detected on this page.</p>
+      <p class="hint">Navigate to a product page on a supported site.</p>
+    </div>
+
+    <div id="deals" class="state hidden">
+      <div id="current-product"></div>
+      <h2>Deals found</h2>
+      <ul id="deal-list"></ul>
+    </div>
+  </main>
+
+  <script src="popup.js"></script>
+</body>
+</html>

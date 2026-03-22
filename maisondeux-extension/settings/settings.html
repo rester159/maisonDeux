@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<!--
+  settings.html
+  Options page for MaisonDeux. Lets users configure which platforms
+  to search and set price/condition preferences.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MaisonDeux Settings</title>
+  <link rel="stylesheet" href="settings.css" />
+</head>
+<body>
+  <div class="settings-container">
+    <h1>MaisonDeux Settings</h1>
+
+    <section>
+      <h2>Platforms</h2>
+      <p class="desc">Choose which platforms to search for deals.</p>
+      <div class="checkbox-group" id="platforms">
+        <label><input type="checkbox" name="platform" value="therealreal" checked /> The RealReal</label>
+        <label><input type="checkbox" name="platform" value="ebay" checked /> eBay</label>
+        <label><input type="checkbox" name="platform" value="poshmark" checked /> Poshmark</label>
+        <label><input type="checkbox" name="platform" value="vestiaire" checked /> Vestiaire Collective</label>
+        <label><input type="checkbox" name="platform" value="grailed" checked /> Grailed</label>
+        <label><input type="checkbox" name="platform" value="mercari" checked /> Mercari</label>
+        <label><input type="checkbox" name="platform" value="shopgoodwill" checked /> ShopGoodwill</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Currency</h2>
+      <p class="desc">Display all prices in this currency.</p>
+      <select id="currency">
+        <option value="USD" selected>USD ($)</option>
+        <option value="EUR">EUR (&euro;)</option>
+        <option value="GBP">GBP (&pound;)</option>
+      </select>
+    </section>
+
+    <section>
+      <h2>Minimum Relevance</h2>
+      <p class="desc">Only show results above this relevance score (0&ndash;100).</p>
+      <input type="range" id="min-relevance" min="0" max="100" value="50" />
+      <span id="relevance-value">50</span>
+    </section>
+
+    <button id="save-btn">Save Settings</button>
+    <p id="status" class="status hidden">Settings saved.</p>
+  </div>
+
+  <script src="settings.js"></script>
+</body>
+</html>

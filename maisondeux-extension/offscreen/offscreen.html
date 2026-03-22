@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<!--
+  offscreen.html
+  Offscreen document used by MaisonDeux to host hidden iframes for
+  cross-platform product searches. Positioned off-viewport so iframes
+  render at full size (needed for JS-rendered content) but remain invisible.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>MaisonDeux Offscreen</title>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #iframe-container {
+      position: absolute;
+      left: -9999px;
+      top: 0;
+      width: 1400px;
+      height: 900px;
+    }
+  </style>
+</head>
+<body>
+  <div id="iframe-container"></div>
+  <script src="offscreen.js"></script>
+</body>
+</html>
