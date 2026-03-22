@@ -22,13 +22,27 @@ type PollResponse = {
   results: Array<{ listing: CanonicalListing }>;
   disclaimer: string;
 };
-type RowKey = "exact" | "brand" | "different";
-type RowState = Record<RowKey, boolean>;
+/** Fixed pill categories; values are filled from search results, frequency-sorted. */
+const PILL_CATEGORIES = ["Brand", "Category", "Size", "Color", "Material"] as const;
+type PillCategoryId = (typeof PILL_CATEGORIES)[number];
 
-const ROW_PREVIEW_COUNT = 4;
-const ROW_TARGET_COUNT = 6;
+type FacetValue = { value: string; count: number };
+type PillFacet = { categoryId: PillCategoryId; label: string; values: FacetValue[]; totalCount: number };
 const SETTINGS_KEY = "maisondeux-settings";
 const DEFAULT_STATUS = "Ready to search.";
+
+/** Deep links to search on each site (some require login). Use when we have a query. */
+const MARKETPLACE_SEARCH_LINKS: Array<{ label: string; url: (q: string) => string; note?: string }> = [
+  { label: "The RealReal", url: (q) => `https://www.therealreal.com/search?q=${encodeURIComponent(q)}`, note: "May require login" },
+  { label: "Vestiaire", url: (q) => `https://www.vestiairecollective.com/search/?q=${encodeURIComponent(q)}`, note: "May require login" },
+  { label: "1stDibs", url: (q) => `https://www.1stdibs.com/search/?q=${encodeURIComponent(q)}` },
+  { label: "eBay", url: (q) => `https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(q)}` },
+  { label: "Chrono24", url: (q) => `https://www.chrono24.com/search/index.htm?query=${encodeURIComponent(q)}`, note: "May require login" },
+  { label: "Rebag", url: (q) => `https://shop.rebag.com/search?q=${encodeURIComponent(q)}` },
+  { label: "Fashionphile", url: (q) => `https://www.fashionphile.com/shop?term=${encodeURIComponent(q)}` },
+  { label: "Grailed", url: (q) => `https://www.grailed.com/shop/${encodeURIComponent(q.toLowerCase().replace(/\s+/g, "-"))}` },
+  { label: "Shop Goodwill", url: (q) => `https://shopgoodwill.com/shop?query=${encodeURIComponent(q)}` }
+];
 
 type StoredSettings = {
   shopgoodwill_access_token?: string;
@@ -369,6 +383,56 @@ function buildRetailSummary(items: CanonicalListing[]): string {
   return `Estimated new retail: ${formatMoney(median)} (range ${formatMoney(min)} - ${formatMoney(max)})`;
 }
 
+function attributeKey(categoryId: PillCategoryId, value: string): string {
+  const v = normalizeText(value).trim() || "_";
+  return `${categoryId}:${v}`;
+}
+
+function getCardAttributeKeys(item: CanonicalListing): string[] {
+  const fields = extractStandardizedItemFields(item);
+  const keys: string[] = [];
+  if (fields.brand && fields.brand !== "Unknown") keys.push(attributeKey("Brand", fields.brand));
+  if (fields.category && fields.category !== "Unknown") keys.push(attributeKey("Category", fields.category));
+  if (fields.size && fields.size !== "Unknown") keys.push(attributeKey("Size", fields.size));
+  if (fields.color && fields.color !== "Unknown") keys.push(attributeKey("Color", fields.color));
+  const material = (item.material ?? "").trim() || fields.category;
+  if (material && material !== "Unknown") keys.push(attributeKey("Material", material));
+  return keys;
+}
+
+function buildPillFacets(items: CanonicalListing[]): PillFacet[] {
+  const counts: Record<PillCategoryId, Record<string, number>> = {
+    Brand: {},
+    Category: {},
+    Size: {},
+    Color: {},
+    Material: {}
+  };
+  for (const item of items) {
+    const fields = extractStandardizedItemFields(item);
+    const brand = fields.brand?.trim();
+    if (brand && brand !== "Unknown") counts.Brand[brand] = (counts.Brand[brand] ?? 0) + 1;
+    const cat = fields.category?.trim();
+    if (cat && cat !== "Unknown") counts.Category[cat] = (counts.Category[cat] ?? 0) + 1;
+    const size = fields.size?.trim();
+    if (size && size !== "Unknown") counts.Size[size] = (counts.Size[size] ?? 0) + 1;
+    const color = fields.color?.trim();
+    if (color && color !== "Unknown") counts.Color[color] = (counts.Color[color] ?? 0) + 1;
+    const mat = (item.material ?? "").trim() || "";
+    if (mat) counts.Material[mat] = (counts.Material[mat] ?? 0) + 1;
+  }
+  const facets: PillFacet[] = PILL_CATEGORIES.map((categoryId) => {
+    const valueCounts = counts[categoryId];
+    const values = Object.entries(valueCounts)
+      .map(([value, count]) => ({ value, count }))
+      .sort((a, b) => b.count - a.count);
+    const totalCount = values.reduce((sum, v) => sum + v.count, 0);
+    return { categoryId, label: categoryId, values, totalCount };
+  }).filter((f) => f.values.length > 0);
+  facets.sort((a, b) => b.totalCount - a.totalCount);
+  return facets;
+}
+
 function getStoredSettings(): StoredSettings {
   try {
     const raw = localStorage.getItem(SETTINGS_KEY);
@@ -398,62 +462,6 @@ function buildRuntimeCredentials(settings: StoredSettings): Record<string, unkno
   return Object.keys(credentials).length ? credentials : undefined;
 }
 
-function buildRowBuckets(items: CanonicalListing[], analysis?: ApiSearch["image_analysis"] | null): Record<RowKey, CanonicalListing[]> {
-  const byPriceAsc = (a: CanonicalListing, b: CanonicalListing) =>
-    extractListingAttributes(a).price - extractListingAttributes(b).price;
-  if (!analysis) {
-    return {
-      exact: items.slice(0, ROW_TARGET_COUNT).sort(byPriceAsc),
-      brand: items.slice(ROW_TARGET_COUNT, ROW_TARGET_COUNT * 2).sort(byPriceAsc),
-      different: items.slice(ROW_TARGET_COUNT * 2, ROW_TARGET_COUNT * 3).sort(byPriceAsc)
-    };
-  }
-  const detectedBrand = normalizeText(analysis.brand || "");
-  const remaining = items.slice();
-  const used = new Set<string>();
-  const rows: Record<RowKey, CanonicalListing[]> = { exact: [], brand: [], different: [] };
-  const isExactBrand = (item: CanonicalListing): boolean =>
-    Boolean(detectedBrand) && normalizeText(extractStandardizedItemFields(item).brand) === detectedBrand;
-  const takeForRow = (row: RowKey, predicate: (item: CanonicalListing) => boolean): void => {
-    for (const item of remaining) {
-      const id = item.listing_id;
-      if (used.has(id)) continue;
-      if (!predicate(item)) continue;
-      used.add(id);
-      rows[row].push(item);
-      if (rows[row].length >= ROW_TARGET_COUNT) return;
-    }
-  };
-
-  takeForRow("exact", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.64);
-  if (rows.exact.length < ROW_TARGET_COUNT) {
-    takeForRow("exact", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.5);
-  }
-  if (rows.exact.length < ROW_TARGET_COUNT) {
-    takeForRow("exact", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.36);
-  }
-
-  takeForRow("brand", (item) => isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.28);
-  if (rows.brand.length < ROW_TARGET_COUNT) takeForRow("brand", (item) => isExactBrand(item));
-
-  takeForRow("different", (item) => !isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.42);
-  if (rows.different.length < ROW_TARGET_COUNT) {
-    takeForRow("different", (item) => !isExactBrand(item) && modelSimilarityScore(item, analysis) >= 0.3);
-  }
-
-  (["exact", "brand", "different"] as RowKey[]).forEach((row) => {
-    if (rows[row].length < ROW_TARGET_COUNT) {
-      if (row === "different") {
-        takeForRow("different", (item) => !isExactBrand(item));
-      } else {
-        takeForRow(row, () => true);
-      }
-    }
-    rows[row].sort(byPriceAsc);
-  });
-  return rows;
-}
-
 export function App() {
   const [status, setStatus] = useState(DEFAULT_STATUS);
   const [metaLine, setMetaLine] = useState("");
@@ -467,19 +475,36 @@ export function App() {
   const [searchId, setSearchId] = useState<string | null>(null);
   const [results, setResults] = useState<CanonicalListing[]>([]);
   const [analysis, setAnalysis] = useState<ApiSearch["image_analysis"] | null>(null);
-  const [expandedRows, setExpandedRows] = useState<RowState>({ exact: false, brand: false, different: false });
+  const [activeAttributeKeys, setActiveAttributeKeys] = useState<Set<string>>(new Set());
+  const [pillOpenCategory, setPillOpenCategory] = useState<PillCategoryId | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<StoredSettings>(() => getStoredSettings());
   const [searchInProgress, setSearchInProgress] = useState(false);
   const [activeSearchMode, setActiveSearchMode] = useState<"text" | "image" | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const pollTimer = useRef<number | null>(null);
+  const pillCarouselRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     return () => {
       if (pollTimer.current) window.clearInterval(pollTimer.current);
     };
   }, []);
+
+  useEffect(() => {
+    if (!pillOpenCategory) return;
+    const close = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        pillCarouselRef.current &&
+        !pillCarouselRef.current.contains(target)
+      ) {
+        setPillOpenCategory(null);
+      }
+    };
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [pillOpenCategory]);
 
   useEffect(() => {
     const orientation = (screen as { orientation?: { lock?: (mode: string) => Promise<void> } }).orientation;
@@ -498,8 +523,35 @@ export function App() {
     return items;
   }, [results, verifiedOnly, sortMode]);
 
-  const buckets = useMemo(() => buildRowBuckets(sortedFiltered, analysis), [sortedFiltered, analysis]);
-  const retailSummary = useMemo(() => buildRetailSummary(sortedFiltered), [sortedFiltered]);
+  const pillFacets = useMemo(() => buildPillFacets(sortedFiltered), [sortedFiltered]);
+
+  useEffect(() => {
+    const allKeys = new Set<string>();
+    for (const item of sortedFiltered) {
+      for (const key of getCardAttributeKeys(item)) allKeys.add(key);
+    }
+    setActiveAttributeKeys(allKeys);
+  }, [sortedFiltered]);
+
+  const listFilteredByPills = useMemo(() => {
+    if (activeAttributeKeys.size === 0) return sortedFiltered;
+    return sortedFiltered.filter((item) => {
+      const keys = getCardAttributeKeys(item);
+      if (keys.length === 0) return true;
+      return keys.every((k) => activeAttributeKeys.has(k));
+    });
+  }, [sortedFiltered, activeAttributeKeys]);
+
+  function toggleAttributeKey(key: string): void {
+    setActiveAttributeKeys((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  const retailSummary = useMemo(() => buildRetailSummary(listFilteredByPills), [listFilteredByPills]);
 
   async function pollSearch(id: string): Promise<void> {
     if (pollTimer.current) window.clearInterval(pollTimer.current);
@@ -548,7 +600,6 @@ export function App() {
       setStatus("Enter a text query first.");
       return;
     }
-    setExpandedRows({ exact: false, brand: false, different: false });
     setAnalysis(null);
     setDetectedLine("");
     setStatus("Starting text search...");
@@ -592,7 +643,6 @@ export function App() {
       setStatus("Choose an image file first.");
       return;
     }
-    setExpandedRows({ exact: false, brand: false, different: false });
     setAnalysis(null);
     setDetectedLine("");
     setStatus("Uploading image...");
@@ -653,87 +703,57 @@ export function App() {
     setStatus("Settings cleared.");
   }
 
-  const renderRowSection = (rowKey: RowKey, title: string, items: CanonicalListing[]) => {
-    const expanded = expandedRows[rowKey];
-    const visible = expanded ? items : items.slice(0, ROW_PREVIEW_COUNT);
+  const renderCard = (item: CanonicalListing) => {
+    const fields = extractStandardizedItemFields(item);
     return (
-      <section className="row-section">
-        <div className="row-head">
-          <div className="row-title">
-            {title} ({items.length})
+      <article className="listing listing-compact" key={item.listing_id}>
+        <img src={item.images?.[0] || ""} alt={item.title || "listing"} />
+        <div className="body">
+          <div className="row">
+            <span className="platform">{item.platform}</span>
+            <span className="price">{formatMoney(item.price_usd)}</span>
           </div>
-          {items.length > ROW_PREVIEW_COUNT ? (
-            <button
-              className="more-btn"
-              type="button"
-              onClick={() => setExpandedRows((prev) => ({ ...prev, [rowKey]: !prev[rowKey] }))}
-            >
-              {expanded ? "Show less" : "More"}
-            </button>
-          ) : null}
+          <div className="title">{item.title || ""}</div>
+          <div className="item-fields">
+            <div className="field-row">
+              <span className="field-label">Brand</span>
+              <span className="field-value">{fields.brand}</span>
+            </div>
+            <div className="field-row">
+              <span className="field-label">Model</span>
+              <span className="field-value">{fields.model}</span>
+            </div>
+            <div className="field-row">
+              <span className="field-label">Category</span>
+              <span className="field-value">{fields.category}</span>
+            </div>
+            <div className="field-row">
+              <span className="field-label">Color</span>
+              <span className="field-value">{fields.color}</span>
+            </div>
+            <div className="field-row">
+              <span className="field-label">Size</span>
+              <span className="field-value">{fields.size}</span>
+            </div>
+            <div className="field-row">
+              <span className="field-label">Condition</span>
+              <span className="field-value">{fields.condition}</span>
+            </div>
+            <div className="field-row">
+              <span className="field-label">Verified</span>
+              <span className={`field-value ${fields.verified ? "verified-yes" : "verified-no"}`}>{fields.verified ? "✓" : "✕"}</span>
+            </div>
+            <div className="field-row">
+              <span className="field-label">New at retail</span>
+              <span className="field-value">{fields.newAtRetail}</span>
+            </div>
+          </div>
+          <div className="trust">Trust: {item.trust_score || 0}/100</div>
+          <a className="footer-link" href={item.platform_listing_url} target="_blank" rel="noopener noreferrer">
+            View on {item.platform}
+          </a>
         </div>
-        <div className="row-grid">
-          {visible.map((item) => (
-            <article className="listing" key={item.listing_id}>
-              <img src={item.images?.[0] || ""} alt={item.title || "listing"} />
-              <div className="body">
-                <div className="row">
-                  <span className="platform">{item.platform}</span>
-                  <span className="price">{formatMoney(item.price_usd)}</span>
-                </div>
-                <div className="title">{item.title || ""}</div>
-                {(() => {
-                  const fields = extractStandardizedItemFields(item);
-                  return (
-                    <div className="item-fields">
-                      <div className="field-row">
-                        <span className="field-label">Brand</span>
-                        <span className="field-value" title={`source: ${fields.brandSource}, confidence: ${fields.brandConfidence.toFixed(2)}`}>
-                          {fields.brand}
-                        </span>
-                      </div>
-                      <div className="field-row">
-                        <span className="field-label">Model</span>
-                        <span className="field-value">{fields.model}</span>
-                      </div>
-                      <div className="field-row">
-                        <span className="field-label">Category</span>
-                        <span className="field-value">{fields.category}</span>
-                      </div>
-                      <div className="field-row">
-                        <span className="field-label">Color</span>
-                        <span className="field-value">{fields.color}</span>
-                      </div>
-                      <div className="field-row">
-                        <span className="field-label">Size</span>
-                        <span className="field-value">{fields.size}</span>
-                      </div>
-                      <div className="field-row">
-                        <span className="field-label">Condition</span>
-                        <span className="field-value">{fields.condition}</span>
-                      </div>
-                      <div className="field-row">
-                        <span className="field-label">Verified</span>
-                        <span className={`field-value ${fields.verified ? "verified-yes" : "verified-no"}`}>
-                          {fields.verified ? "✓" : "✕"}
-                        </span>
-                      </div>
-                      <div className="field-row">
-                        <span className="field-label">New at retail</span>
-                        <span className="field-value">{fields.newAtRetail}</span>
-                      </div>
-                    </div>
-                  );
-                })()}
-                <div className="trust">Trust: {item.trust_score || 0}/100</div>
-                <a className="footer-link" href={item.platform_listing_url} target="_blank" rel="noopener noreferrer">
-                  View on {item.platform}
-                </a>
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
+      </article>
     );
   };
 
@@ -867,17 +887,87 @@ export function App() {
 
       </section>
 
-      <section className="grid">
-        {sortedFiltered.length ? (
-          <>
-            {renderRowSection("exact", "Exact brand and model", buckets.exact)}
-            {renderRowSection("brand", "Exact brand, similar model", buckets.brand)}
-            {renderRowSection("different", "Different brand, similar model", buckets.different)}
-          </>
-        ) : null}
+      {sortedFiltered.length > 0 ? (
+        <section className="pill-section" aria-label="Filter by attribute">
+          <div className="pill-carousel-wrap">
+            <div className="pill-carousel" ref={pillCarouselRef} role="list">
+              {pillFacets.map((facet) => {
+                const isOpen = pillOpenCategory === facet.categoryId;
+                return (
+                  <div className="pill-wrapper" key={facet.categoryId} role="listitem">
+                    <button
+                      type="button"
+                      className={`pill ${isOpen ? "pill-open" : ""}`}
+                      onClick={() => setPillOpenCategory(isOpen ? null : facet.categoryId)}
+                      aria-expanded={isOpen}
+                      aria-haspopup="listbox"
+                    >
+                      {facet.label}
+                    </button>
+                    {isOpen ? (
+                      <div className="pill-dropdown" role="listbox">
+                        {facet.values.map(({ value, count }) => {
+                          const key = attributeKey(facet.categoryId, value);
+                          const isActive = activeAttributeKeys.has(key);
+                          return (
+                            <button
+                              key={key}
+                              type="button"
+                              className={`pill-dropdown-item ${isActive ? "pill-item-on" : "pill-item-off"}`}
+                              role="option"
+                              aria-selected={isActive}
+                              onClick={() => toggleAttributeKey(key)}
+                            >
+                              <span className="pill-item-label">{value}</span>
+                              <span className="pill-item-count">{count}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+            <div className="pill-scroll-hint" aria-hidden="true">
+              ← scroll →
+            </div>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="result-list">
+        {listFilteredByPills.map((item) => renderCard(item))}
       </section>
-      {!sortedFiltered.length ? (
+      {queryText.trim() ? (
+        <section className="search-on-sites" aria-label="Search on other sites">
+          <p className="search-on-sites-intro">
+            Some sites require login or an API key to see results here. Search on each site with your query:
+          </p>
+          <div className="search-on-sites-links">
+            {MARKETPLACE_SEARCH_LINKS.map(({ label, url, note }) => (
+              <a
+                key={label}
+                className="search-on-sites-link"
+                href={url(queryText.trim())}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                {label}
+                {note ? <span className="search-on-sites-note"> ({note})</span> : null}
+              </a>
+            ))}
+          </div>
+        </section>
+      ) : null}
+      {!sortedFiltered.length && !queryText.trim() ? (
         <div className="empty">No results yet. Start with image upload or text search above.</div>
+      ) : null}
+      {!sortedFiltered.length && queryText.trim() ? (
+        <div className="empty">No results from connected sources. Use the links above to search on each site.</div>
+      ) : null}
+      {sortedFiltered.length > 0 && listFilteredByPills.length === 0 ? (
+        <div className="empty">No listings match the current filters. Turn some pill attributes back on.</div>
       ) : null}
       <div className="disclaimer">{disclaimer}</div>
       <nav className="bottom-nav" aria-label="Primary navigation">

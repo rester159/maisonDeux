@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>MaisonDeux Offscreen</title>
+</head>
+<body>
+  <!-- 
+    This page is never visible to the user.
+    It loads search result pages from other platforms inside iframes,
+    captures the rendered content, and extracts listing data.
+  -->
+  <div id="iframe-container" style="position: absolute; left: -9999px; width: 1400px; height: 900px;">
+    <!-- Iframes will be dynamically inserted here -->
+  </div>
+  <canvas id="capture-canvas" style="display: none;" width="1400" height="900"></canvas>
+  <script src="offscreen.js"></script>
+</body>
+</html>

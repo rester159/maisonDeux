@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MaisonDeux</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600&display=swap');
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: 340px;
+      font-family: 'DM Sans', -apple-system, sans-serif;
+      background: #fafaf8;
+      color: #1a1a1a;
+    }
+
+    .header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 18px 20px 14px;
+      border-bottom: 1px solid #e8e5e0;
+      background: #fff;
+    }
+
+    .logo-mark {
+      width: 32px;
+      height: 32px;
+      background: #1a1a1a;
+      color: #fafaf8;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 17px;
+      letter-spacing: -0.02em;
+    }
+
+    .logo-text {
+      font-size: 17px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+
+    .logo-tagline {
+      font-size: 11px;
+      color: #999;
+      letter-spacing: 0.03em;
+      font-weight: 400;
+    }
+
+    .content {
+      padding: 20px;
+    }
+
+    .state-idle {
+      text-align: center;
+      padding: 30px 20px;
+    }
+
+    .state-idle p {
+      font-size: 13px;
+      color: #888;
+      line-height: 1.6;
+    }
+
+    .supported-sites {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      justify-content: center;
+      margin-top: 14px;
+    }
+
+    .site-tag {
+      font-size: 11px;
+      background: #f0ede8;
+      color: #666;
+      padding: 4px 10px;
+      border-radius: 12px;
+      font-weight: 500;
+      letter-spacing: 0.02em;
+    }
+
+    .product-info {
+      margin-bottom: 16px;
+    }
+
+    .product-label {
+      font-size: 11px;
+      color: #999;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 500;
+      margin-bottom: 6px;
+    }
+
+    .product-name {
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 1.4;
+      margin-bottom: 2px;
+    }
+
+    .product-price {
+      font-size: 13px;
+      color: #666;
+    }
+
+    .platform-status {
+      margin-top: 16px;
+    }
+
+    .platform-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid #f0ede8;
+      font-size: 13px;
+    }
+
+    .platform-row:last-child {
+      border-bottom: none;
+    }
+
+    .platform-name {
+      font-weight: 500;
+    }
+
+    .deal-count {
+      font-size: 12px;
+      font-weight: 600;
+      color: #fff;
+      background: #1a1a1a;
+      padding: 2px 8px;
+      border-radius: 10px;
+    }
+
+    .deal-count.empty {
+      background: #e0ddd8;
+      color: #999;
+    }
+
+    .settings-link {
+      display: block;
+      margin-top: 16px;
+      text-align: center;
+      font-size: 11px;
+      color: #bbb;
+      text-decoration: none;
+      letter-spacing: 0.03em;
+    }
+
+    .settings-link:hover {
+      color: #888;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div class="logo-mark">M</div>
+    <div>
+      <div class="logo-text">MaisonDeux</div>
+      <div class="logo-tagline">Second-hand deal finder</div>
+    </div>
+  </div>
+
+  <div class="content" id="content">
+    <div class="state-idle" id="idle-state">
+      <p>Browse a product page on any supported marketplace and MaisonDeux will automatically find deals on other platforms.</p>
+      <div class="supported-sites">
+        <span class="site-tag">The RealReal</span>
+        <span class="site-tag">eBay</span>
+        <span class="site-tag">Poshmark</span>
+        <span class="site-tag">Vestiaire</span>
+        <span class="site-tag">Grailed</span>
+        <span class="site-tag">Mercari</span>
+      </div>
+    </div>
+    <div id="product-state" style="display: none;"></div>
+  </div>
+
+  <a href="#" class="settings-link" id="settings-link">Settings</a>
+
+  <script src="popup.js"></script>
+</body>
+</html>

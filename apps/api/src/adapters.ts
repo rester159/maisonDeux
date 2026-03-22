@@ -777,10 +777,11 @@ export class Chrono24Adapter extends PartnerRestAdapter {
         const items = await this.fetchPartnerListings(query);
         if (items.length) return items.map((item) => this.mapPartnerItem(item, category));
       } catch {
-        // Fall through to public-page scraping when partner API is unavailable.
+        return this.scrapeFallback.search(query, category);
       }
     }
-    return this.scrapeFallback.search(query, category);
+    // No API key: site may require login. Return empty; user can use "Search on Chrono24" link.
+    return [];
   }
 }
 
@@ -806,10 +807,12 @@ export class TheRealRealAdapter extends PartnerRestAdapter {
         const items = await this.fetchPartnerListings(query);
         if (items.length) return items.map((item) => this.mapPartnerItem(item, category));
       } catch {
-        // Fall through to public-page scraping when partner API is unavailable.
+        // Fall through to scrape only when we had a key but the API failed.
+        return this.scrapeFallback.search(query, category);
       }
     }
-    return this.scrapeFallback.search(query, category);
+    // No API key: site often requires login for public search. Return empty; user can use "Search on The RealReal" link.
+    return [];
   }
 }
 
@@ -835,10 +838,11 @@ export class VestiaireAdapter extends PartnerRestAdapter {
         const items = await this.fetchPartnerListings(query);
         if (items.length) return items.map((item) => this.mapPartnerItem(item, category));
       } catch {
-        // Fall through to public-page scraping when partner API is unavailable.
+        return this.scrapeFallback.search(query, category);
       }
     }
-    return this.scrapeFallback.search(query, category);
+    // No API key: site often requires login. Return empty; user can use "Search on Vestiaire" link.
+    return [];
   }
 }
 

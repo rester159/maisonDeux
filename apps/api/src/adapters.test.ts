@@ -49,85 +49,38 @@ test("EbayAdapter maps browse API response", async () => {
   }
 });
 
-test("Chrono24Adapter falls back to scraping when API key missing", async () => {
-  const originalFetch = global.fetch;
+test("Chrono24Adapter returns empty when API key missing (login-gated strategy)", async () => {
   const originalChrono = process.env.CHRONO24_API_KEY;
   delete process.env.CHRONO24_API_KEY;
   try {
-    global.fetch = (async () =>
-      ({
-        ok: true,
-        text: async () => `<!doctype html><html><body>
-          <div class="tile">
-            <a href="/rolex/submariner/id-998877/" data-tn="item-tile-title-anchor">
-              <h2>Rolex Submariner Date 41mm</h2>
-            </a>
-            <div>$12950</div>
-            <img src="https://cdn.example.com/c24.jpg" />
-          </div>
-        </body></html>`
-      }) as Response);
-
     const chrono = new Chrono24Adapter();
     const results = await chrono.search("Rolex Submariner", "watch");
-    assert.equal(results.length, 1);
-    assert.equal(results[0].platform, "chrono24");
-    assert.equal(results[0].price_usd, 12950);
+    assert.equal(results.length, 0);
   } finally {
-    global.fetch = originalFetch;
     if (originalChrono) process.env.CHRONO24_API_KEY = originalChrono;
   }
 });
 
-test("VestiaireAdapter falls back to scraping when API key missing", async () => {
-  const originalFetch = global.fetch;
+test("VestiaireAdapter returns empty when API key missing (login-gated strategy)", async () => {
   const originalVest = process.env.VESTIAIRE_API_KEY;
   delete process.env.VESTIAIRE_API_KEY;
   try {
-    global.fetch = (async () =>
-      ({
-        ok: true,
-        text: async () => `<!doctype html><html><head>
-          <script type="application/ld+json">
-          {"@context":"https://schema.org","@type":"ItemList","itemListElement":[{"@type":"ListItem","position":1,"item":{"@type":"Product","sku":"vc-998","name":"Hermes Birkin 30 Togo","url":"https://www.vestiairecollective.com/women-bags/handbags/hermes/birkin-30","image":"https://cdn.example.com/vc-birkin.jpg","offers":{"@type":"Offer","price":"14500","priceCurrency":"USD","itemCondition":"https://schema.org/UsedCondition"}}}]}
-          </script>
-          </head><body></body></html>`
-      }) as Response);
-
     const vestiaire = new VestiaireAdapter();
     const results = await vestiaire.search("Hermes Birkin", "bag");
-    assert.equal(results.length, 1);
-    assert.equal(results[0].platform, "vestiaire");
-    assert.equal(results[0].price_usd, 14500);
+    assert.equal(results.length, 0);
   } finally {
-    global.fetch = originalFetch;
     if (originalVest) process.env.VESTIAIRE_API_KEY = originalVest;
   }
 });
 
-test("TheRealRealAdapter falls back to scraping when API key missing", async () => {
-  const originalFetch = global.fetch;
+test("TheRealRealAdapter returns empty when API key missing (login-gated strategy)", async () => {
   const originalTrr = process.env.THEREALREAL_API_KEY;
   delete process.env.THEREALREAL_API_KEY;
   try {
-    global.fetch = (async () =>
-      ({
-        ok: true,
-        text: async () => `<!doctype html><html><head>
-          <script type="application/ld+json">
-          {"@context":"https://schema.org","@type":"ItemList","itemListElement":[{"@type":"ListItem","position":1,"item":{"@type":"Product","sku":"trr-551","name":"Gucci Ophidia Crossbody Bag","url":"https://www.therealreal.com/products/women/handbags/shoulder-bags/gucci-ophidia-crossbody","image":"https://cdn.example.com/trr-ophidia.jpg","offers":{"@type":"Offer","price":"1295","priceCurrency":"USD","itemCondition":"https://schema.org/UsedCondition"}}}]}
-          </script>
-          </head><body></body></html>`
-      }) as Response);
-
     const adapter = new TheRealRealAdapter();
     const results = await adapter.search("Gucci Ophidia", "bag");
-    assert.equal(results.length, 1);
-    assert.equal(results[0].platform, "therealreal");
-    assert.equal(results[0].platform_listing_id, "trr-551");
-    assert.equal(results[0].price_usd, 1295);
+    assert.equal(results.length, 0);
   } finally {
-    global.fetch = originalFetch;
     if (originalTrr) process.env.THEREALREAL_API_KEY = originalTrr;
   }
 });

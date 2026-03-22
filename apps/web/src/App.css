@@ -200,41 +200,139 @@ button.secondary {
   gap: 18px;
 }
 
-.row-section {
-  background: rgba(19, 11, 33, 0.62);
-  border: 1px solid rgba(255, 255, 255, 0.13);
-  border-radius: 16px;
-  padding: 12px;
+/* —— Pills (filter facets) —— */
+.pill-section {
+  margin-top: 12px;
+  margin-bottom: 8px;
 }
 
-.row-head {
+.pill-carousel-wrap {
+  position: relative;
+  padding-right: 48px;
+}
+
+.pill-carousel {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scrollbar-width: thin;
+  padding: 6px 0;
+  -webkit-overflow-scrolling: touch;
+}
+
+.pill-carousel::-webkit-scrollbar {
+  height: 6px;
+}
+
+.pill-carousel::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.3);
+  border-radius: 3px;
+}
+
+.pill-scroll-hint {
+  position: absolute;
+  top: 50%;
+  right: 8px;
+  transform: translateY(-50%);
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.pill-wrapper {
+  position: relative;
+  flex: 0 0 auto;
+  scroll-snap-align: start;
+}
+
+.pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  background: rgba(143, 124, 255, 0.2);
+  border: 1px solid rgba(143, 124, 255, 0.4);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.pill:hover,
+.pill.pill-open {
+  background: rgba(143, 124, 255, 0.35);
+  border-color: rgba(143, 124, 255, 0.6);
+}
+
+.pill-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 160px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  padding: 6px;
+}
+
+.pill-dropdown-item {
   display: flex;
   justify-content: space-between;
-  gap: 10px;
   align-items: center;
-  margin-bottom: 10px;
-}
-
-.row-title {
-  font-size: 15px;
-  font-weight: 700;
-  color: #f8f6ff;
-}
-
-.row-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
-  gap: 12px;
-}
-
-.more-btn {
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.09);
+  width: 100%;
   padding: 8px 10px;
-  border-radius: 10px;
-  font-size: 12px;
-  font-weight: 700;
-  color: #fff;
+  font-size: 13px;
+  text-align: left;
+  background: transparent;
+  border: none;
+  border-radius: 8px;
+  color: var(--text);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.pill-dropdown-item:hover {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.pill-dropdown-item.pill-item-on {
+  color: var(--good);
+  font-weight: 600;
+}
+
+.pill-dropdown-item.pill-item-off {
+  color: var(--text-soft);
+  opacity: 0.85;
+}
+
+.pill-item-count {
+  font-size: 11px;
+  color: var(--text-soft);
+  margin-left: 8px;
+}
+
+.pill-item-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* —— Result list (single column) —— */
+.result-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 8px;
 }
 
 .listing {
@@ -244,6 +342,10 @@ button.secondary {
   overflow: hidden;
 }
 
+.listing-compact {
+  border-radius: 12px;
+}
+
 .listing img {
   width: 100%;
   height: 220px;
@@ -251,8 +353,16 @@ button.secondary {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.listing-compact img {
+  height: 120px;
+}
+
 .listing .body {
   padding: 12px;
+}
+
+.listing-compact .body {
+  padding: 8px 10px;
 }
 
 .row {
@@ -279,6 +389,55 @@ button.secondary {
   font-weight: 600;
   line-height: 1.35;
   min-height: 42px;
+}
+
+.listing-compact .title {
+  margin-top: 4px;
+  font-size: 13px;
+  min-height: 0;
+  line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.listing-compact .item-fields {
+  margin-top: 6px;
+  padding: 6px;
+  gap: 4px;
+}
+
+.listing-compact .field-row {
+  gap: 6px;
+}
+
+.listing-compact .field-label,
+.listing-compact .field-value {
+  font-size: 11px;
+}
+
+.listing-compact .trust {
+  margin-top: 6px;
+  font-size: 11px;
+}
+
+.listing-compact .footer-link {
+  margin-top: 8px;
+  padding: 6px 8px;
+  font-size: 11px;
+}
+
+.listing-compact .row {
+  gap: 6px;
+}
+
+.listing-compact .platform {
+  font-size: 10px;
+}
+
+.listing-compact .price {
+  font-size: 16px;
 }
 
 .sub {
@@ -359,6 +518,49 @@ button.secondary {
   border: 1px dashed rgba(255, 255, 255, 0.2);
   border-radius: 14px;
   padding: 18px;
+}
+
+.search-on-sites {
+  margin-top: 20px;
+  padding: 14px;
+  background: rgba(12, 8, 22, 0.5);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+}
+
+.search-on-sites-intro {
+  margin: 0 0 10px;
+  font-size: 13px;
+  color: var(--text-soft);
+}
+
+.search-on-sites-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.search-on-sites-link {
+  display: inline-block;
+  padding: 6px 12px;
+  font-size: 13px;
+  color: var(--accent-two);
+  background: rgba(143, 124, 255, 0.15);
+  border: 1px solid rgba(143, 124, 255, 0.35);
+  border-radius: 999px;
+  text-decoration: none;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.search-on-sites-link:hover {
+  background: rgba(143, 124, 255, 0.25);
+  border-color: rgba(143, 124, 255, 0.55);
+}
+
+.search-on-sites-note {
+  font-size: 11px;
+  color: var(--text-soft);
+  font-weight: normal;
 }
 
 .disclaimer {
