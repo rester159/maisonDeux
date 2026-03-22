@@ -1,9 +1,4 @@
 <!DOCTYPE html>
-<!--
-  settings.html
-  Options page for MaisonDeux. Lets users configure which platforms
-  to search and set price/condition preferences.
--->
 <html lang="en">
 <head>
   <meta charset="UTF-8" />
@@ -26,6 +21,27 @@
         <label><input type="checkbox" name="platform" value="grailed" checked /> Grailed</label>
         <label><input type="checkbox" name="platform" value="mercari" checked /> Mercari</label>
         <label><input type="checkbox" name="platform" value="shopgoodwill" checked /> ShopGoodwill</label>
+      </div>
+    </section>
+
+    <section>
+      <h2>API Keys</h2>
+      <p class="desc">Enter API keys for enhanced search. eBay keys enable direct API search.</p>
+      <div class="key-fields">
+        <label>eBay App ID <input type="password" id="ebay_app_id" placeholder="EnricoDA-sniperX-PRD-..." /></label>
+        <label>eBay Cert ID <input type="password" id="ebay_cert_id" placeholder="PRD-..." /></label>
+        <label>SerpAPI Key <input type="password" id="serpapi_key" placeholder="Optional — fallback search" /></label>
+        <label>Anthropic API Key <input type="password" id="anthropic_key" placeholder="Optional — AI classification" /></label>
+      </div>
+    </section>
+
+    <section>
+      <h2>Platform Credentials</h2>
+      <p class="desc">Optional — log into platforms for better search results.</p>
+      <div class="key-fields">
+        <label>TheRealReal API Key <input type="password" id="therealreal_api_key" placeholder="Optional" /></label>
+        <label>Vestiaire API Key <input type="password" id="vestiaire_api_key" placeholder="Optional" /></label>
+        <label>ShopGoodwill Token <input type="password" id="shopgoodwill_access_token" placeholder="Optional" /></label>
       </div>
     </section>
 

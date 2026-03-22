@@ -65,6 +65,37 @@ section {
   cursor: pointer;
 }
 
+/* ---- Key fields ---- */
+
+.key-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.key-fields label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 13px;
+  font-weight: 500;
+  color: #4a3728;
+}
+
+.key-fields input {
+  padding: 8px 10px;
+  border: 1px solid #e0d6cc;
+  border-radius: 6px;
+  font-size: 13px;
+  font-family: inherit;
+  background: #fff;
+}
+
+.key-fields input:focus {
+  outline: none;
+  border-color: #4a3728;
+}
+
 /* ---- Select ---- */
 
 select {
