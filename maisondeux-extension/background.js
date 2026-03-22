@@ -49,6 +49,8 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { type, payload } = message;
 
+  console.log(`[MaisonDeux][bg] Message received: ${type}`, payload);
+
   switch (type) {
     case 'PRODUCT_DETECTED':
       handleProductDetected(payload, sender.tab);
@@ -112,6 +114,13 @@ async function handleProductDetected(product, tab) {
 
   // Load credentials from storage.
   const creds = await loadCredentials();
+  console.log('[MaisonDeux][bg] Credentials loaded:', {
+    ebayHasAppId: !!creds.ebay.appId,
+    ebayHasCertId: !!creds.ebay.certId,
+    hasSerpApi: !!creds.serpApiKey,
+    hasTRR: !!creds.therealreal.apiKey,
+  });
+  console.log('[MaisonDeux][bg] Searching platforms:', platforms);
 
   // Search all platforms via API.
   let allResults = [];
