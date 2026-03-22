@@ -192,12 +192,15 @@ function showProduct(product) {
   } else {
     $productPlatformIcon.style.display = 'none';
   }
-  $productNameText.textContent = [product.brand, product.productName || product.title].filter(Boolean).join(' — ');
+  $productNameText.textContent = product.productName || product.title || '';
 
   // Format price.
   const priceVal = parseFloat(String(product.price || '').replace(/[^0-9.]/g, '')) || 0;
   const currency = product.currency || 'USD';
-  $productPrice.textContent = priceVal > 0 ? `${currency} $${priceVal.toLocaleString()}` : '';
+
+  // Build details row: brand · model · color · price
+  const $details = document.getElementById('product-details');
+  $details.innerHTML = '';
 
   // Build attribute pills from ALL product text (title + description + condition).
   $productAttrs.innerHTML = '';
@@ -234,7 +237,18 @@ function showProduct(product) {
   const category = product.category || product.categoryText || product.attrs?.categories?.[0] || null;
   if (category) pills.push({ label: category, type: 'category' });
 
+  // Build details line: Brand · Model · Color · Price
+  const detailParts = [];
+  if (product.brand) detailParts.push(`<strong>${esc(product.brand)}</strong>`);
+  if (model) detailParts.push(esc(model));
+  if (colors) detailParts.push(esc(colors));
+  if (priceVal > 0) detailParts.push(`<strong>$${priceVal.toLocaleString()}</strong>`);
+  $details.innerHTML = detailParts.join(' · ');
+
+  // Render remaining attribute pills (material, condition, category — skip what's in details).
   for (const pill of pills) {
+    // Skip brand/model/color/price — already in details line.
+    if (['price', 'color', 'model'].includes(pill.type)) continue;
     const chip = document.createElement('span');
     chip.className = `sp-chip sp-chip-${pill.type}`;
     chip.textContent = pill.label;
