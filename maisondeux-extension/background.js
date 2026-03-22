@@ -1,30 +1,19 @@
 /**
  * @file background.js
- * @description Service worker that orchestrates the MaisonDeux pipeline.
- * Uses API-based search (not iframes) for cross-platform deal finding.
+ * @description Service worker for MaisonDeux. Self-contained — no ES module
+ * imports to avoid Chrome service worker module loading issues.
  *
- * Flow:
- * 1. Content script sends PRODUCT_DETECTED
- * 2. Classify product heuristically
- * 3. Search all platforms via API adapters (parallel)
- * 4. Classify and score results
- * 5. Send DEAL_RESULTS to side panel
- * 6. Update badge
+ * Orchestrates: product detection → API search → scoring → side panel display.
  */
 
-import { classifyHeuristic } from './classifier.js';
-import { normalizeAll } from './taxonomy.js';
-import { filterAndRank } from './relevance.js';
-import { searchAllPlatforms } from './search/index.js';
-import cache from './utils/cache.js';
-import logger from './utils/logger.js';
-import { fetchRates } from './utils/currency.js';
+/* global chrome */
 
 // ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
 const tabProducts = new Map();
+const tabResults = new Map(); // Store search results per tab
 let isActive = true;
 
 const ALL_PLATFORMS = ['therealreal', 'ebay', 'poshmark', 'vestiaire', 'grailed', 'mercari', 'shopgoodwill'];
@@ -33,14 +22,13 @@ const ALL_PLATFORMS = ['therealreal', 'ebay', 'poshmark', 'vestiaire', 'grailed'
 // Bootstrap
 // ---------------------------------------------------------------------------
 
-fetchRates().then(() => logger.info('Exchange rates loaded'));
-
 chrome.storage.local.get('maisondeux_active', (data) => {
   isActive = data.maisondeux_active !== false;
 });
 
-// Open side panel on action click.
 chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => {});
+
+console.log('[MaisonDeux][bg] Service worker started');
 
 // ---------------------------------------------------------------------------
 // Message router
@@ -48,17 +36,22 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   const { type, payload } = message;
-
-  console.log(`[MaisonDeux][bg] Message received: ${type}`, payload);
+  console.log(`[MaisonDeux][bg] Message: ${type}`);
 
   switch (type) {
     case 'PRODUCT_DETECTED':
       handleProductDetected(payload, sender.tab);
       break;
 
-    case 'GET_CURRENT_PRODUCT':
-      handleGetCurrentProduct(sendResponse);
+    case 'GET_CURRENT_PRODUCT': {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tabId = tabs[0]?.id;
+        const product = tabProducts.get(tabId) || null;
+        const results = tabResults.get(tabId) || [];
+        sendResponse({ product, results, searchComplete: true });
+      });
       return true;
+    }
 
     case 'SET_ACTIVE':
       isActive = payload.active;
@@ -79,129 +72,540 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 chrome.tabs.onRemoved.addListener((tabId) => tabProducts.delete(tabId));
 
 // ---------------------------------------------------------------------------
-// Handlers
+// Product detected → search pipeline
 // ---------------------------------------------------------------------------
 
 async function handleProductDetected(product, tab) {
   if (!isActive || !tab?.id) return;
 
   const tabId = tab.id;
-  logger.info(`Product detected: ${product.brand} ${product.productName || product.title}`);
+  console.log(`[MaisonDeux][bg] Product: ${product.brand || ''} ${product.productName || product.title || ''}`);
 
-  // Classify source product.
-  const classified = classifyHeuristic(product);
-  const enrichedProduct = { ...product, attrs: classified, ...classified };
-  tabProducts.set(tabId, enrichedProduct);
+  // Store product for this tab.
+  tabProducts.set(tabId, product);
 
   // Notify side panel.
-  broadcast({ type: 'PRODUCT_DETECTED', payload: enrichedProduct });
+  broadcast({ type: 'PRODUCT_DETECTED', payload: product });
 
-  // Determine platforms to search (exclude current).
+  // Determine platforms to search.
   const currentPlatform = product.platform || product.source || '';
   const platforms = ALL_PLATFORMS.filter((p) => p !== currentPlatform);
 
   broadcast({ type: 'SEARCH_STARTED', payload: { platformCount: platforms.length } });
 
-  // Check cache.
-  const cacheKey = `search:${product.brand}:${product.productName || product.title}`;
-  const cached = await cache.get(cacheKey);
-  if (cached) {
-    logger.info('Using cached results');
-    broadcast({ type: 'DEAL_RESULTS', payload: { listings: cached, complete: true } });
-    updateBadge(cached.length);
-    return;
-  }
 
-  // Load credentials from storage.
+  // Load credentials.
   const creds = await loadCredentials();
-  console.log('[MaisonDeux][bg] Credentials loaded:', {
-    ebayHasAppId: !!creds.ebay.appId,
-    ebayHasCertId: !!creds.ebay.certId,
-    hasSerpApi: !!creds.serpApiKey,
-    hasTRR: !!creds.therealreal.apiKey,
-  });
-  console.log('[MaisonDeux][bg] Searching platforms:', platforms);
+  console.log('[MaisonDeux][bg] Credentials:', JSON.stringify({
+    ebay: !!creds.ebay?.appId,
+    serpapi: !!creds.serpApiKey,
+  }));
 
-  // Search all platforms via API.
-  let allResults = [];
+  // Build search query.
+  const query = [product.brand, product.productName || product.title]
+    .filter(Boolean).join(' ').trim().slice(0, 120);
 
-  try {
-    allResults = await searchAllPlatforms(enrichedProduct, platforms, creds, (platform, results) => {
-      // Classify and score each batch as it arrives.
-      const scored = classifyAndScore(results, enrichedProduct);
-      if (scored.length) {
+  console.log(`[MaisonDeux][bg] Query: "${query}"`);
+
+  // Search all platforms in parallel.
+  const allResults = [];
+
+  const searches = platforms.map(async (platform) => {
+    try {
+      const results = await searchPlatform(platform, query, creds);
+      console.log(`[MaisonDeux][bg] ${platform}: ${results.length} results`);
+
+      if (results.length) {
+        // Pass results through with a default score.
+        const scored = results.map((r) => ({
+          ...r,
+          relevanceScore: 0.5,
+          relevanceLabel: 'Match',
+        }));
+        allResults.push(...scored);
+        console.log(`[MaisonDeux][bg] Broadcasting ${scored.length} results for ${platform}`);
         broadcast({
           type: 'DEAL_RESULTS',
           payload: { listings: scored, platform, complete: false },
         });
       }
-      logger.info(`${platform}: ${results.length} raw → ${scored.length} scored`);
-    });
-  } catch (err) {
-    logger.error(`Search failed: ${err.message}`);
-  }
+    } catch (err) {
+      console.warn(`[MaisonDeux][bg] ${platform} error:`, err.message);
+    }
+  });
 
-  // Final scoring of all results together.
-  const finalResults = classifyAndScore(allResults, enrichedProduct);
+  await Promise.allSettled(searches);
 
-  // Send final results.
+  // Final results — sort by relevance.
+  allResults.sort((a, b) => (b.relevanceScore || 0) - (a.relevanceScore || 0));
+  console.log(`[MaisonDeux][bg] Total: ${allResults.length} results`);
+
+  // Store for late-opening side panel.
+  tabResults.set(tabId, allResults);
+
   broadcast({
     type: 'DEAL_RESULTS',
-    payload: { listings: finalResults, complete: true },
+    payload: { listings: allResults, complete: true },
   });
 
   broadcast({
     type: 'DEALS_COUNT',
-    payload: { count: finalResults.length },
+    payload: { count: allResults.length },
   });
 
-  updateBadge(finalResults.length);
+  if (allResults.length > 0) {
+    chrome.action.setBadgeText({ text: String(allResults.length) });
+    chrome.action.setBadgeBackgroundColor({ color: '#2e7d32' });
+  } else {
+    chrome.action.setBadgeText({ text: '' });
+  }
+}
 
-  // Cache results.
-  if (finalResults.length) {
-    cache.set(cacheKey, finalResults).catch(() => {});
+// ---------------------------------------------------------------------------
+// Platform search dispatcher
+// ---------------------------------------------------------------------------
+
+async function searchPlatform(platform, query, creds) {
+  switch (platform) {
+    case 'ebay':         return searchEbay(query, creds.ebay);
+    case 'therealreal':  return searchViaFetch(platform, query, creds.therealreal);
+    case 'poshmark':     return searchViaFetch(platform, query, creds.poshmark);
+    case 'vestiaire':    return searchViaFetch(platform, query, creds.vestiaire);
+    case 'grailed':      return searchViaFetch(platform, query, creds.grailed);
+    case 'mercari':      return searchViaFetch(platform, query, creds.mercari);
+    case 'shopgoodwill': return searchShopGoodwill(query, creds.shopgoodwill);
+    default:             return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// eBay Browse API
+// ---------------------------------------------------------------------------
+
+let ebayToken = null;
+let ebayTokenExpiry = 0;
+
+async function searchEbay(query, creds) {
+  if (!creds?.appId || !creds?.certId) {
+    console.log('[MaisonDeux][bg] eBay: no credentials, skipping API search');
+    // Fallback: try web search
+    return searchEbayWeb(query);
   }
 
-  logger.info(`Search complete: ${finalResults.length} deals`);
+  try {
+    // Get OAuth token.
+    if (!ebayToken || Date.now() >= ebayTokenExpiry) {
+      const basicAuth = btoa(`${creds.appId}:${creds.certId}`);
+      const tokenRes = await fetch('https://api.ebay.com/identity/v1/oauth2/token', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Basic ${basicAuth}`,
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: 'grant_type=client_credentials&scope=https://api.ebay.com/oauth/api_scope',
+      });
+
+      if (!tokenRes.ok) {
+        console.warn(`[MaisonDeux][bg] eBay OAuth failed: ${tokenRes.status}`);
+        return searchEbayWeb(query);
+      }
+
+      const tokenData = await tokenRes.json();
+      ebayToken = tokenData.access_token;
+      ebayTokenExpiry = Date.now() + (tokenData.expires_in - 60) * 1000;
+      console.log('[MaisonDeux][bg] eBay OAuth token obtained');
+    }
+
+    // Search Browse API.
+    const params = new URLSearchParams({
+      q: query,
+      limit: '10',
+    });
+
+    const res = await fetch(`https://api.ebay.com/buy/browse/v1/item_summary/search?${params}`, {
+      headers: {
+        'Authorization': `Bearer ${ebayToken}`,
+        'X-EBAY-C-MARKETPLACE-ID': 'EBAY_US',
+      },
+    });
+
+    if (!res.ok) {
+      console.warn(`[MaisonDeux][bg] eBay Browse API: ${res.status}`);
+      return searchEbayWeb(query);
+    }
+
+    const data = await res.json();
+    return (data.itemSummaries || []).map((item) => ({
+      title: item.title || '',
+      price: item.price ? `$${item.price.value}` : '',
+      priceValue: item.price ? parseFloat(item.price.value) : 0,
+      currency: item.price?.currency || 'USD',
+      img: item.thumbnailImages?.[0]?.imageUrl || item.image?.imageUrl || '',
+      link: item.itemWebUrl || '',
+      condition: item.condition || '',
+      platform: 'ebay',
+      source: 'api',
+    }));
+  } catch (err) {
+    console.warn('[MaisonDeux][bg] eBay API error:', err.message);
+    return searchEbayWeb(query);
+  }
 }
 
-function handleGetCurrentProduct(sendResponse) {
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const product = tabProducts.get(tabs[0]?.id) || null;
-    sendResponse({ product });
-  });
+async function searchEbayWeb(query) {
+  try {
+    const res = await fetch(`https://www.ebay.com/sch/i.html?_nkw=${encodeURIComponent(query)}&_sacat=0&LH_BIN=1&rt=nc`, {
+      headers: { 'Accept': 'text/html' },
+    });
+    if (!res.ok) return [];
+    // Can't reliably parse eBay HTML from service worker.
+    return [];
+  } catch {
+    return [];
+  }
 }
 
 // ---------------------------------------------------------------------------
-// Classification & scoring
+// Platform search via HTML fetch + embedded JSON extraction
 // ---------------------------------------------------------------------------
 
-function classifyAndScore(results, sourceProduct) {
-  if (!results?.length) return [];
+const PLATFORM_SEARCH_URLS = {
+  therealreal: (q) => `https://www.therealreal.com/shop?search=${encodeURIComponent(q)}`,
+  poshmark:    (q) => `https://poshmark.com/search?query=${encodeURIComponent(q)}&type=listings`,
+  vestiaire:   (q) => `https://www.vestiairecollective.com/search/?q=${encodeURIComponent(q)}`,
+  grailed:     (q) => `https://www.grailed.com/shop?query=${encodeURIComponent(q)}`,
+  mercari:     (q) => `https://www.mercari.com/search/?keyword=${encodeURIComponent(q)}`,
+  shopgoodwill:(q) => `https://shopgoodwill.com/search?query=${encodeURIComponent(q)}`,
+};
 
-  const classified = results.map((listing) => {
-    const text = [listing.title, listing.condition].filter(Boolean).join(' ');
-    const attrs = normalizeAll(text);
-    return {
-      ...listing,
-      attrs,
-      brand: attrs.brands[0] || listing.brand || null,
-      color: attrs.colors[0] || listing.color || null,
-      material: attrs.materials[0] || listing.material || null,
-      size: attrs.sizes[0] || listing.size || null,
-      condition: attrs.conditions[0] || listing.condition || null,
-      category: attrs.categories[0] || listing.category || null,
+async function searchViaFetch(platform, query, _creds = {}) {
+  try {
+    const urlBuilder = PLATFORM_SEARCH_URLS[platform];
+    if (!urlBuilder) return [];
+
+    const url = urlBuilder(query);
+    console.log(`[MaisonDeux][bg] ${platform} fetching: ${url}`);
+
+    const res = await fetch(url, {
+      headers: {
+        'Accept': 'text/html,application/xhtml+xml',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
+      },
+    });
+
+    if (!res.ok) {
+      console.log(`[MaisonDeux][bg] ${platform} HTTP ${res.status}`);
+      return [];
+    }
+
+    const html = await res.text();
+    console.log(`[MaisonDeux][bg] ${platform} HTML length: ${html.length}`);
+
+    // Try to extract embedded JSON data from the page.
+    return extractFromHtml(platform, html, url);
+  } catch (err) {
+    console.log(`[MaisonDeux][bg] ${platform} error: ${err.message}`);
+    return [];
+  }
+}
+
+/**
+ * Extract listing data from HTML by finding embedded JSON
+ * (__NEXT_DATA__, window.__data, ld+json, etc.)
+ */
+function extractFromHtml(platform, html, baseUrl) {
+  const results = [];
+
+  // Strategy 1: __NEXT_DATA__ (used by Poshmark, Mercari, Grailed, Vestiaire)
+  const nextDataMatch = html.match(/<script id="__NEXT_DATA__"[^>]*>([\s\S]*?)<\/script>/);
+  if (nextDataMatch) {
+    try {
+      const nextData = JSON.parse(nextDataMatch[1]);
+      const items = findItemsInObject(nextData, 0, 3);
+      console.log(`[MaisonDeux][bg] ${platform} __NEXT_DATA__ items: ${items.length}`);
+      for (const item of items.slice(0, 10)) {
+        const parsed = parseGenericItem(item, platform);
+        if (parsed) results.push(parsed);
+      }
+      if (results.length) return results;
+    } catch (e) {
+      console.log(`[MaisonDeux][bg] ${platform} __NEXT_DATA__ parse error: ${e.message}`);
+    }
+  }
+
+  // Strategy 2: window.__data or similar global JSON
+  const windowDataPatterns = [
+    /window\.__data\s*=\s*({[\s\S]*?});\s*<\/script>/,
+    /window\.__PRELOADED_STATE__\s*=\s*({[\s\S]*?});\s*<\/script>/,
+    /window\.serverData\s*=\s*({[\s\S]*?});\s*<\/script>/,
+    /__remixContext\s*=\s*({[\s\S]*?});\s*<\/script>/,
+  ];
+
+  for (const pattern of windowDataPatterns) {
+    const match = html.match(pattern);
+    if (match) {
+      try {
+        const data = JSON.parse(match[1]);
+        const items = findItemsInObject(data, 0, 3);
+        console.log(`[MaisonDeux][bg] ${platform} window data items: ${items.length}`);
+        for (const item of items.slice(0, 10)) {
+          const parsed = parseGenericItem(item, platform);
+          if (parsed) results.push(parsed);
+        }
+        if (results.length) return results;
+      } catch { /* skip */ }
+    }
+  }
+
+  // Strategy 3: JSON-LD structured data
+  const ldJsonMatches = html.matchAll(/<script type="application\/ld\+json">([\s\S]*?)<\/script>/g);
+  for (const match of ldJsonMatches) {
+    try {
+      const ld = JSON.parse(match[1]);
+      if (ld['@type'] === 'ItemList' && ld.itemListElement) {
+        for (const elem of ld.itemListElement.slice(0, 10)) {
+          const item = elem.item || elem;
+          results.push({
+            title: item.name || '',
+            price: item.offers?.price ? `$${item.offers.price}` : '',
+            priceValue: parseFloat(item.offers?.price || 0),
+            currency: item.offers?.priceCurrency || 'USD',
+            img: item.image || '',
+            link: item.url || '',
+            condition: '',
+            platform,
+            source: 'ld-json',
+          });
+        }
+        if (results.length) return results;
+      }
+    } catch { /* skip */ }
+  }
+
+  // Strategy 4: Regex-based extraction from raw HTML.
+  // Look for product-like patterns: title + price + link in repeated HTML blocks.
+  const linkPattern = platform === 'therealreal' ? /href="(\/products\/[^"]+)"/g
+    : platform === 'poshmark' ? /href="(\/listing\/[^"]+)"/g
+    : platform === 'grailed' ? /href="(\/listings\/\d+[^"]*)"/g
+    : platform === 'mercari' ? /href="(\/item\/[^"]+)"/g
+    : platform === 'vestiaire' ? /href="(\/[^"]*-\d+\.shtml)"/g
+    : platform === 'shopgoodwill' ? /href="(\/item\/\d+)"/g
+    : null;
+
+  if (linkPattern) {
+    const domains = {
+      therealreal: 'https://www.therealreal.com',
+      poshmark: 'https://poshmark.com',
+      grailed: 'https://www.grailed.com',
+      mercari: 'https://www.mercari.com',
+      vestiaire: 'https://www.vestiairecollective.com',
+      shopgoodwill: 'https://shopgoodwill.com',
     };
-  });
 
-  return filterAndRank(sourceProduct, classified, { minScore: 0.1, maxResults: 50 });
+    const seen = new Set();
+    let match;
+    while ((match = linkPattern.exec(html)) !== null) {
+      const path = match[1];
+      if (seen.has(path)) continue;
+      seen.add(path);
+
+      const fullLink = domains[platform] + path;
+
+      // Try to extract a title near this link.
+      const idx = match.index;
+      const surroundingHtml = html.substring(Math.max(0, idx - 500), Math.min(html.length, idx + 1000));
+
+      // Extract title from nearby text.
+      const titleMatch = surroundingHtml.match(/(?:title|alt|aria-label)="([^"]{10,120})"/i)
+        || surroundingHtml.match(/>([A-Z][^<]{10,100})</);
+      const title = titleMatch ? titleMatch[1].trim() : '';
+
+      // Extract price.
+      const priceMatch = surroundingHtml.match(/[\$€£]\s*[\d,]+(?:\.\d{2})?/)
+        || surroundingHtml.match(/(\d{1,6}(?:\.\d{2})?)\s*(?:USD|EUR|GBP)/);
+      const priceText = priceMatch ? priceMatch[0] : '';
+      const priceValue = parseFloat(priceText.replace(/[^0-9.]/g, '')) || 0;
+
+      // Extract image.
+      const imgMatch = surroundingHtml.match(/(?:src|data-src)="(https?:\/\/[^"]+(?:\.jpg|\.jpeg|\.png|\.webp)[^"]*)"/i);
+      const img = imgMatch ? imgMatch[1] : '';
+
+      if (title || priceValue > 0) {
+        results.push({
+          title: title || path.split('/').pop().replace(/-/g, ' '),
+          price: priceText || (priceValue > 0 ? `$${priceValue}` : ''),
+          priceValue,
+          currency: 'USD',
+          img,
+          link: fullLink,
+          condition: '',
+          platform,
+          source: 'html-regex',
+        });
+      }
+
+      if (results.length >= 10) break;
+    }
+
+    if (results.length) {
+      console.log(`[MaisonDeux][bg] ${platform} regex extracted: ${results.length}`);
+      return results;
+    }
+  }
+
+  console.log(`[MaisonDeux][bg] ${platform} no data found`);
+  return results;
+}
+
+/**
+ * Recursively search a nested object for arrays that look like product listings.
+ * Returns the first array of 3+ objects that have title/name/price-like fields.
+ */
+function findItemsInObject(obj, depth, maxDepth) {
+  if (depth > maxDepth || !obj || typeof obj !== 'object') return [];
+
+  if (Array.isArray(obj)) {
+    if (obj.length >= 2 && typeof obj[0] === 'object' && obj[0] !== null) {
+      const first = obj[0];
+      const hasProductFields = first.title || first.name || first.product_name ||
+                                first.price || first.sale_price || first.currentPrice ||
+                                first.designer_name || first.brand;
+      if (hasProductFields) return obj;
+    }
+    // Search within array elements.
+    for (const item of obj.slice(0, 5)) {
+      const found = findItemsInObject(item, depth + 1, maxDepth);
+      if (found.length) return found;
+    }
+    return [];
+  }
+
+  // Search object values.
+  for (const val of Object.values(obj)) {
+    const found = findItemsInObject(val, depth + 1, maxDepth);
+    if (found.length) return found;
+  }
+  return [];
+}
+
+/**
+ * Parse a generic item object into our normalized listing format.
+ */
+function parseGenericItem(item, platform) {
+  if (!item || typeof item !== 'object') return null;
+
+  const title = item.title || item.name || item.product_name ||
+    [item.designer_name || item.brand_name || item.brand?.name, item.name || item.product_name].filter(Boolean).join(' ') || '';
+
+  if (!title) return null;
+
+  const priceRaw = item.price || item.sale_price || item.current_price || item.currentPrice ||
+    item.display_price || item.price_amount || '';
+  const priceNum = typeof priceRaw === 'number' ? priceRaw :
+    parseFloat(String(priceRaw).replace(/[^0-9.]/g, '')) || 0;
+
+  const img = item.image_url || item.primary_image || item.picture_url ||
+    item.cover_photo?.url || item.cover_shot?.url || item.photo ||
+    item.thumbnails?.[0] || item.imageUrl || item.imageURL || item.thumbnail ||
+    item.image || '';
+
+  let link = item.url || item.link || item.itemWebUrl || item.product_link ||
+    item.canonical_url || item.href || '';
+
+  if (item.id && !link) {
+    const linkMap = {
+      therealreal: `https://www.therealreal.com/products/${item.id}`,
+      poshmark: `https://poshmark.com/listing/${item.id}`,
+      grailed: `https://www.grailed.com/listings/${item.id}`,
+      mercari: `https://www.mercari.com/item/${item.id}/`,
+      shopgoodwill: `https://shopgoodwill.com/item/${item.id}`,
+    };
+    link = linkMap[platform] || '';
+  }
+
+  // Make relative URLs absolute.
+  if (link && !link.startsWith('http')) {
+    const domains = {
+      therealreal: 'https://www.therealreal.com',
+      poshmark: 'https://poshmark.com',
+      vestiaire: 'https://www.vestiairecollective.com',
+      grailed: 'https://www.grailed.com',
+      mercari: 'https://www.mercari.com',
+    };
+    link = (domains[platform] || '') + link;
+  }
+
+  return {
+    title,
+    price: priceNum > 0 ? `$${priceNum}` : String(priceRaw),
+    priceValue: priceNum,
+    currency: item.currency || 'USD',
+    img,
+    link,
+    condition: item.condition?.label || item.condition?.name || item.condition || '',
+    platform,
+    source: 'html-parse',
+  };
 }
 
 // ---------------------------------------------------------------------------
-// Credentials
+// ShopGoodwill API
 // ---------------------------------------------------------------------------
 
-async function loadCredentials() {
+async function searchShopGoodwill(query, _creds = {}) {
+  // ShopGoodwill: try the buyer API first, fallback to HTML search.
+  try {
+    const res = await fetch('https://buyerapi.shopgoodwill.com/api/Search/ItemListing', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json',
+      },
+      body: JSON.stringify({
+        searchText: query,
+        searchOption: 0,
+        page: 1,
+        pageSize: 10,
+        sortColumn: 0,
+        sortOrder: 0,
+        categoryLevelNo: 0,
+        categoryLevel: 0,
+        sellerIds: '',
+        closedAuctions: false,
+      }),
+    });
+
+    if (!res.ok) {
+      console.log(`[MaisonDeux][bg] shopgoodwill: ${res.status}`);
+      return [];
+    }
+
+    const data = await res.json();
+    const items = data.searchResults || data.items || [];
+
+    return items.slice(0, 10).map((item) => ({
+      title: item.title || item.name || '',
+      price: item.currentPrice ? `$${item.currentPrice}` : '',
+      priceValue: parseFloat(item.currentPrice || 0),
+      currency: 'USD',
+      img: item.imageUrl || item.imageURL || '',
+      link: item.itemId ? `https://shopgoodwill.com/item/${item.itemId}` : '',
+      condition: '',
+      platform: 'shopgoodwill',
+      source: 'api',
+    }));
+  } catch (err) {
+    console.log(`[MaisonDeux][bg] shopgoodwill API error: ${err.message}, trying HTML`);
+    // Fallback to HTML search.
+    return searchViaFetch('shopgoodwill', query);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Credentials loader
+// ---------------------------------------------------------------------------
+
+function loadCredentials() {
   return new Promise((resolve) => {
     chrome.storage.sync.get(null, (settings) => {
       resolve({
@@ -209,15 +613,9 @@ async function loadCredentials() {
           appId: settings.ebay_app_id || '',
           certId: settings.ebay_cert_id || '',
         },
-        therealreal: {
-          apiKey: settings.therealreal_api_key || '',
-        },
-        vestiaire: {
-          apiKey: settings.vestiaire_api_key || '',
-        },
-        shopgoodwill: {
-          accessToken: settings.shopgoodwill_access_token || '',
-        },
+        therealreal: { apiKey: settings.therealreal_api_key || '' },
+        vestiaire: { apiKey: settings.vestiaire_api_key || '' },
+        shopgoodwill: { accessToken: settings.shopgoodwill_access_token || '' },
         poshmark: {},
         grailed: {},
         mercari: {},
@@ -235,7 +633,188 @@ function broadcast(message) {
   chrome.runtime.sendMessage(message).catch(() => {});
 }
 
-function updateBadge(count) {
-  chrome.action.setBadgeText({ text: count > 0 ? String(count) : '' });
-  chrome.action.setBadgeBackgroundColor({ color: '#2e7d32' });
+// ---------------------------------------------------------------------------
+// Inline relevance scoring
+// ---------------------------------------------------------------------------
+
+/**
+ * Score a candidate result against the source product.
+ * Adds relevanceScore, relevanceLabel, color, material, category, condition
+ * fields parsed from the title text.
+ */
+function scoreResult(candidate, source) {
+  // Extract attributes from the candidate title.
+  const titleLower = (candidate.title || '').toLowerCase();
+
+  // Simple keyword extraction for attributes.
+  const color = extractAttr(titleLower, COLOR_KEYWORDS) || null;
+  const material = extractAttr(titleLower, MATERIAL_KEYWORDS) || null;
+  const category = extractAttr(titleLower, CATEGORY_KEYWORDS) || null;
+  const condition = candidate.condition || null;
+
+  // Infer brand from title.
+  const brand = extractBrand(titleLower) || null;
+
+  // Score components.
+  let score = 0;
+  let maxScore = 0;
+
+  // Brand match (30 points).
+  const srcBrand = (source.brand || '').toLowerCase();
+  if (srcBrand) {
+    maxScore += 30;
+    if (brand && brand === srcBrand) score += 30;
+    else if (brand && titleLower.includes(srcBrand)) score += 30;
+    else if (titleLower.includes(srcBrand)) score += 25;
+  }
+
+  // Title word overlap (25 points).
+  const srcTitle = (source.productName || source.title || '').toLowerCase();
+  if (srcTitle) {
+    maxScore += 25;
+    const srcWords = srcTitle.split(/\W+/).filter(w => w.length > 2);
+    const candWords = titleLower.split(/\W+/).filter(w => w.length > 2);
+    if (srcWords.length) {
+      const matches = srcWords.filter(w => candWords.includes(w)).length;
+      score += Math.round((matches / srcWords.length) * 25);
+    }
+  }
+
+  // Category match (10 points).
+  const srcCategory = (source.category || source.categoryText || '').toLowerCase();
+  if (srcCategory && category) {
+    maxScore += 10;
+    if (srcCategory.includes(category) || category.includes(srcCategory)) score += 10;
+  }
+
+  // Color match (10 points).
+  if (color) {
+    maxScore += 10;
+    const srcColor = (source.color || '').toLowerCase();
+    if (srcColor && srcColor === color) score += 10;
+    else if (!srcColor) score += 5; // Benefit of the doubt.
+  }
+
+  // Material match (10 points).
+  if (material) {
+    maxScore += 10;
+    const srcMaterial = (source.material || '').toLowerCase();
+    if (srcMaterial && srcMaterial === material) score += 10;
+    else if (!srcMaterial) score += 5;
+  }
+
+  const relevanceScore = maxScore > 0 ? Math.round((score / maxScore) * 100) / 100 : 0.5;
+  const relevanceLabel = relevanceScore >= 0.85 ? 'Exact Match'
+    : relevanceScore >= 0.7 ? 'Very Similar'
+    : relevanceScore >= 0.5 ? 'Similar'
+    : relevanceScore >= 0.3 ? 'Related'
+    : 'Weak Match';
+
+  // Compute price delta.
+  const srcPrice = parseFloat(String(source.price || '').replace(/[^0-9.]/g, '')) || 0;
+  const candPrice = candidate.priceValue || parseFloat(String(candidate.price || '').replace(/[^0-9.]/g, '')) || 0;
+  let priceDelta = null;
+  if (srcPrice > 0 && candPrice > 0) {
+    const diff = srcPrice - candPrice;
+    const pct = Math.round((Math.abs(diff) / srcPrice) * 100);
+    priceDelta = { absolute: diff, percentage: pct, isCheaper: diff > 0 };
+  }
+
+  return {
+    ...candidate,
+    brand,
+    color,
+    material,
+    category,
+    condition,
+    relevanceScore,
+    relevanceLabel,
+    priceDelta,
+  };
 }
+
+function extractAttr(text, keywords) {
+  for (const [canonical, aliases] of Object.entries(keywords)) {
+    for (const alias of aliases) {
+      if (text.includes(alias)) return canonical;
+    }
+  }
+  return null;
+}
+
+function extractBrand(text) {
+  for (const [canonical, aliases] of Object.entries(BRAND_KEYWORDS)) {
+    for (const alias of aliases) {
+      if (text.includes(alias)) return canonical;
+    }
+  }
+  return null;
+}
+
+// Minimal inline keyword dictionaries for scoring.
+const COLOR_KEYWORDS = {
+  black: ['black', 'noir', 'nero'],
+  white: ['white', 'blanc', 'ivory', 'cream'],
+  beige: ['beige', 'tan', 'nude', 'camel'],
+  brown: ['brown', 'chocolate', 'cognac', 'mocha', 'tobacco'],
+  red: ['red', 'burgundy', 'crimson', 'wine', 'bordeaux'],
+  pink: ['pink', 'rose', 'blush', 'coral', 'fuchsia'],
+  blue: ['blue', 'navy', 'cobalt', 'teal', 'denim'],
+  green: ['green', 'olive', 'emerald', 'sage', 'forest'],
+  grey: ['grey', 'gray', 'charcoal', 'slate'],
+  gold: ['gold', 'champagne', 'golden'],
+  silver: ['silver'],
+  orange: ['orange', 'rust', 'terracotta'],
+  yellow: ['yellow', 'mustard'],
+  purple: ['purple', 'violet', 'plum', 'lavender'],
+};
+
+const MATERIAL_KEYWORDS = {
+  leather: ['leather', 'lambskin', 'calfskin', 'caviar', 'patent'],
+  canvas: ['canvas', 'monogram canvas', 'coated canvas', 'damier'],
+  suede: ['suede', 'nubuck'],
+  silk: ['silk', 'satin'],
+  denim: ['denim', 'jean'],
+  tweed: ['tweed', 'boucle'],
+  nylon: ['nylon', 'tessuto'],
+  exotic: ['python', 'crocodile', 'ostrich', 'lizard'],
+};
+
+const CATEGORY_KEYWORDS = {
+  handbag: ['bag', 'handbag', 'tote', 'clutch', 'purse', 'crossbody', 'satchel', 'flap', 'bucket'],
+  wallet: ['wallet', 'card holder', 'card case', 'coin purse', 'woc', 'wallet on chain'],
+  shoes: ['shoe', 'heel', 'boot', 'sneaker', 'loafer', 'sandal', 'pump', 'flat', 'mule'],
+  jewelry: ['ring', 'necklace', 'bracelet', 'earring', 'pendant', 'brooch'],
+  watch: ['watch', 'timepiece'],
+  clothing: ['dress', 'jacket', 'coat', 'blazer', 'shirt', 'pants', 'sweater', 'top'],
+  accessories: ['scarf', 'belt', 'sunglasses', 'hat', 'tie', 'keychain'],
+};
+
+const BRAND_KEYWORDS = {
+  chanel: ['chanel'],
+  'louis vuitton': ['louis vuitton', 'vuitton', ' lv '],
+  gucci: ['gucci'],
+  hermes: ['hermes', 'hermès'],
+  dior: ['dior', 'christian dior'],
+  prada: ['prada'],
+  fendi: ['fendi'],
+  bottega: ['bottega veneta', 'bottega'],
+  balenciaga: ['balenciaga'],
+  'saint laurent': ['saint laurent', 'ysl', 'yves saint laurent'],
+  celine: ['celine', 'céline'],
+  loewe: ['loewe'],
+  valentino: ['valentino'],
+  burberry: ['burberry'],
+  versace: ['versace'],
+  cartier: ['cartier'],
+  rolex: ['rolex'],
+  omega: ['omega'],
+  tiffany: ['tiffany'],
+  givenchy: ['givenchy'],
+  'miu miu': ['miu miu'],
+  ferragamo: ['ferragamo'],
+  coach: ['coach'],
+  'michael kors': ['michael kors'],
+  'kate spade': ['kate spade'],
+  'tory burch': ['tory burch'],
+};

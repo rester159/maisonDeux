@@ -73,9 +73,28 @@
    */
   function extractProduct(hostname) {
     const q = (sel) => document.querySelector(sel)?.textContent?.trim() || '';
+    const qAll = (...sels) => {
+      for (const sel of sels) {
+        const text = q(sel);
+        if (text) return text;
+      }
+      return '';
+    };
     const price = (sel) => {
       const text = q(sel);
       return parseFloat(text.replace(/[^0-9.]/g, '')) || 0;
+    };
+    // Grab full description/details text from the page.
+    const descriptionText = (...sels) => {
+      for (const sel of sels) {
+        try {
+          const els = document.querySelectorAll(sel);
+          if (els.length) {
+            return [...els].map(el => el.textContent?.trim()).filter(Boolean).join(' ');
+          }
+        } catch {}
+      }
+      return '';
     };
 
     if (hostname.includes('therealreal.com')) {
@@ -83,6 +102,7 @@
         brand: q('[data-testid="designer-name"], .product-details__designer, .pdp-designer-name, h2 a[href*="/designers/"]'),
         productName: q('[data-testid="product-name"], .product-details__name, h1, .pdp-product-name'),
         title: q('[data-testid="product-name"], .product-details__name, h1'),
+        description: descriptionText('.product-details__description', '[data-testid="product-description"]', '.pdp-description', '[itemprop="description"]', '.product-details li', '.product-details__condition', '.product-details'),
         category: q('[data-testid="breadcrumb"], .breadcrumbs, nav[aria-label="breadcrumb"]'),
         conditionText: q('.product-details__condition, [data-testid="condition"]'),
         price: price('[data-testid="price"], .product-details__price, .pdp-price, [itemprop="price"]'),
@@ -98,6 +118,7 @@
         brand: inferBrand(title),
         productName: title,
         title,
+        description: descriptionText('.x-item-description', '#desc_div', '[itemprop="description"]', '.x-item-specifics', '.ux-labels-values'),
         category: q('.breadcrumbs a:last-child, nav.breadcrumbs li:last-child'),
         conditionText: q('.x-item-condition span, .x-item-condition-text span, [data-testid="ux-icon-text"], .vi-cond'),
         price: price('.x-price-primary span, [itemprop="price"], .vi-price'),
@@ -112,6 +133,7 @@
         brand: q('[data-testid="brand-name"], .listing__brand, a[href*="/brand/"], .listing-brand a'),
         productName: q('[data-testid="listing-title"], .listing__title, h1'),
         title: q('[data-testid="listing-title"], .listing__title, h1'),
+        description: descriptionText('[data-testid="listing-description"], .listing__description, .listing-description'),
         category: q('[data-testid="listing-category"], .listing__category'),
         conditionText: q('[data-testid="listing-condition"], .listing__condition'),
         price: price('[data-testid="listing-price"], .listing__price, .price'),
@@ -132,6 +154,7 @@
         brand: q('.product__brand, [data-testid="designer-name"], .pdp-brand, a[href*="/designers/"]'),
         productName: q('.product__name, [data-testid="product-title"], h1'),
         title: q('.product__name, [data-testid="product-title"], h1'),
+        description: descriptionText('.product__description, [data-testid="product-description"], .pdp-description, [itemprop="description"]'),
         category: q('.breadcrumb a:last-child, [data-testid="breadcrumb"]'),
         conditionText: q('.product__condition, [data-testid="product-condition"]'),
         price: price('.product__price, [data-testid="product-price"], .price-box'),
@@ -146,6 +169,7 @@
         brand: q('.listing-designer-info a, [data-testid="designer"], .Details-designerName, [class*="DesignerName"]'),
         productName: q('.listing-title, [data-testid="listing-title"], h1, [class*="ListingTitle"]'),
         title: q('.listing-title, [data-testid="listing-title"], h1'),
+        description: descriptionText('.listing-description, [data-testid="listing-description"], [class*="Description"]'),
         category: q('.listing-category, [data-testid="category"], [class*="Category"]'),
         conditionText: q('.listing-condition, [data-testid="condition"], [class*="Condition"]'),
         price: price('.listing-price, [data-testid="price"], .Price, [class*="Price"]'),
@@ -160,6 +184,7 @@
         brand: q('[data-testid="BrandName"], .BrandName, a[href*="/brand/"]'),
         productName: q('[data-testid="ItemName"], h1, .ItemName'),
         title: q('[data-testid="ItemName"], h1'),
+        description: descriptionText('[data-testid="ItemDescription"], .ItemDescription, .item-description'),
         category: q('[data-testid="item-category"], .breadcrumb a:last-child'),
         conditionText: q('[data-testid="item-condition"], [class*="Condition"]'),
         price: price('[data-testid="ItemPrice"], .ItemPrice, .price'),
@@ -175,6 +200,7 @@
         brand: inferBrand(title),
         productName: title,
         title,
+        description: descriptionText('.lot-description, .item-description, .product-description, #description'),
         category: q('.breadcrumb a:last-child, .category-name'),
         conditionText: q('.item-condition, .condition'),
         price: price('.current-bid, .item-price, .price'),

@@ -25,8 +25,9 @@ const $resultsList  = document.getElementById('results-list');
 const $clearFilters = document.getElementById('clear-filters');
 const $settingsBtn  = document.getElementById('settings-btn');
 const filterEls = {
+  brand:     document.getElementById('filter-brand'),
   color:     document.getElementById('filter-color'),
-  size:      document.getElementById('filter-size'),
+  model:     document.getElementById('filter-model'),
   material:  document.getElementById('filter-material'),
   condition: document.getElementById('filter-condition'),
   relevance: document.getElementById('filter-relevance'),
@@ -49,13 +50,15 @@ chrome.storage.local.get('maisondeux_active', (data) => {
   updateView();
 });
 
-// Ask background for current product immediately.
+// Ask background for current product and any existing results.
 chrome.runtime.sendMessage({ type: 'GET_CURRENT_PRODUCT' }, (response) => {
+  console.log('[MaisonDeux][panel] GET_CURRENT_PRODUCT response:', response);
   if (response?.product) {
     showProduct(response.product);
-    if (response.results) {
+    if (response.results && response.results.length) {
       allResults = response.results;
       searchComplete = response.searchComplete || false;
+      console.log(`[MaisonDeux][panel] Loaded ${allResults.length} cached results`);
       renderResults();
     }
   }
@@ -126,11 +129,12 @@ Object.values(filterEls).forEach((el) => {
 
 $clearFilters.addEventListener('click', (e) => {
   e.preventDefault();
+  if (filterEls.brand) filterEls.brand.value = '';
   filterEls.color.value = '';
-  filterEls.size.value = '';
+  filterEls.model.value = '';
   filterEls.material.value = '';
   filterEls.condition.value = '';
-  filterEls.relevance.value = '0.5';
+  filterEls.relevance.value = '0';
   updateFilterStyles();
   renderResults();
 });
@@ -174,23 +178,51 @@ function showProduct(product) {
   $productCtx.classList.remove('hidden');
   $productPlatform.textContent = product.platform || product.source || '';
   $productName.textContent = [product.brand, product.productName || product.title].filter(Boolean).join(' — ');
-  $productPrice.textContent = `${product.currency || 'USD'} ${product.price || ''}`;
 
-  // Attribute chips.
+  // Format price.
+  const priceVal = parseFloat(String(product.price || '').replace(/[^0-9.]/g, '')) || 0;
+  const currency = product.currency || 'USD';
+  $productPrice.textContent = priceVal > 0 ? `${currency} $${priceVal.toLocaleString()}` : '';
+
+  // Build attribute pills from ALL product text (title + description + condition).
   $productAttrs.innerHTML = '';
-  const attrs = product.attrs || {};
-  const chipData = [
-    ...(attrs.colors || []),
-    ...(attrs.materials || []),
-    ...(attrs.sizes || []),
-    ...(attrs.hardware || []),
-    ...(attrs.conditions || []),
-    ...(attrs.categories || []),
-  ];
-  for (const val of chipData) {
+  const titleText = [
+    product.brand,
+    product.productName || product.title,
+    product.description,
+    product.conditionText || product.condition,
+    product.categoryText || product.category,
+  ].filter(Boolean).join(' ');
+
+  const pills = [];
+
+  // Price pill.
+  if (priceVal > 0) pills.push({ label: `$${priceVal.toLocaleString()}`, type: 'price' });
+
+  // Color.
+  const colors = product.color || product.attrs?.colors?.[0] || [...scanTitle(titleText, FILTER_COLORS)][0] || null;
+  if (colors) pills.push({ label: colors, type: 'color' });
+
+  // Model.
+  const model = product.model || [...scanTitle(titleText, FILTER_MODELS)][0] || null;
+  if (model) pills.push({ label: model, type: 'model' });
+
+  // Material.
+  const material = product.material || product.attrs?.materials?.[0] || [...scanTitle(titleText, FILTER_MATERIALS)][0] || null;
+  if (material) pills.push({ label: material, type: 'material' });
+
+  // Condition.
+  const condition = product.conditionText || product.condition || product.attrs?.conditions?.[0] || [...scanTitle(titleText, FILTER_CONDITIONS)][0] || null;
+  if (condition) pills.push({ label: condition, type: 'condition' });
+
+  // Category.
+  const category = product.category || product.categoryText || product.attrs?.categories?.[0] || null;
+  if (category) pills.push({ label: category, type: 'category' });
+
+  for (const pill of pills) {
     const chip = document.createElement('span');
-    chip.className = 'sp-chip';
-    chip.textContent = val;
+    chip.className = `sp-chip sp-chip-${pill.type}`;
+    chip.textContent = pill.label;
     $productAttrs.appendChild(chip);
   }
 }
@@ -212,30 +244,84 @@ function renderResults() {
     return;
   }
 
-  $filterSection.classList.remove('hidden');
   $resultsSection.classList.remove('hidden');
 
-  // Populate filter dropdowns from available values.
-  populateFilterOptions();
-
-  // Apply filters.
+  // Step 1: Apply relevance filter.
   const minScore = parseFloat(filterEls.relevance.value) || 0;
-  let filtered = allResults.filter((r) => (r.relevanceScore || r.score || 0) >= minScore);
+  let filtered = allResults.filter((r) => (r.relevanceScore ?? r.score ?? 1.0) >= minScore);
 
-  for (const [key, el] of Object.entries(filterEls)) {
-    if (key === 'relevance' || !el.value) continue;
-    filtered = filtered.filter((r) => {
-      const val = r.attrs?.[key] || r[key] || '';
-      return val.toLowerCase().includes(el.value.toLowerCase());
-    });
+  // Step 2: Apply each active filter.
+  const filterKeys = ['brand', 'color', 'model', 'material', 'condition'];
+  for (const key of filterKeys) {
+    const el = filterEls[key];
+    if (!el || !el.value) continue;
+    const filterVal = el.value.toLowerCase();
+    filtered = filtered.filter((r) => matchesFilter(r, key, filterVal));
   }
+
+  // Step 3: Populate filter dropdowns based on FILTERED results (cascading).
+  // For each filter, show only values present in results filtered by OTHER active filters.
+  for (const key of filterKeys) {
+    const el = filterEls[key];
+    if (!el) continue;
+
+    // Get results filtered by all OTHER filters (not this one).
+    let pool = allResults.filter((r) => (r.relevanceScore ?? r.score ?? 1.0) >= minScore);
+    for (const otherKey of filterKeys) {
+      if (otherKey === key) continue;
+      const otherEl = filterEls[otherKey];
+      if (!otherEl || !otherEl.value) continue;
+      pool = pool.filter((r) => matchesFilter(r, otherKey, otherEl.value.toLowerCase()));
+    }
+
+    // Extract available values from this pool.
+    const available = new Set();
+    const keywordList = key === 'brand' ? FILTER_BRANDS
+      : key === 'color' ? FILTER_COLORS
+      : key === 'model' ? FILTER_MODELS
+      : key === 'material' ? FILTER_MATERIALS
+      : FILTER_CONDITIONS;
+
+    for (const r of pool) {
+      if (r[key]) available.add(r[key]);
+      scanTitle(r.title || '', keywordList).forEach((v) => available.add(v));
+      if (key === 'condition' && r.condition) available.add(r.condition);
+    }
+
+    // Update dropdown options.
+    const currentVal = el.value;
+    const firstOpt = el.querySelector('option[value=""]');
+    el.innerHTML = '';
+    if (firstOpt) el.appendChild(firstOpt);
+
+    const sorted = [...available].sort();
+    for (const v of sorted) {
+      const opt = document.createElement('option');
+      opt.value = v.toLowerCase();
+      opt.textContent = v;
+      if (v.toLowerCase() === currentVal) opt.selected = true;
+      el.appendChild(opt);
+    }
+
+    // Hide filter if no values available.
+    el.style.display = sorted.length > 0 ? '' : 'none';
+  }
+
+  // Show/hide filter section.
+  const anyFilterVisible = filterKeys.some((k) => {
+    const el = filterEls[k];
+    return el && el.style.display !== 'none' && el.options.length > 1;
+  });
+  $filterSection.classList.toggle('hidden', !anyFilterVisible);
+
+  updateFilterStyles();
 
   // Sort: relevance desc, then price asc.
   filtered.sort((a, b) => {
     const scoreA = a.relevanceScore || a.score || 0;
     const scoreB = b.relevanceScore || b.score || 0;
     if (scoreB !== scoreA) return scoreB - scoreA;
-    return (parseFloat(a.price) || 0) - (parseFloat(b.price) || 0);
+    return parsePrice(a.price) - parsePrice(b.price);
   });
 
   // Group by platform.
@@ -284,27 +370,31 @@ function renderListing(listing) {
 
   // Price delta.
   let savingsHtml = '';
-  if (currentProduct?.price && listing.price) {
-    const srcPrice = parseFloat(String(currentProduct.price).replace(/[^0-9.]/g, ''));
-    const candPrice = parseFloat(String(listing.price).replace(/[^0-9.]/g, ''));
-    if (srcPrice && candPrice) {
-      const delta = srcPrice - candPrice;
-      const pct = Math.round((Math.abs(delta) / srcPrice) * 100);
-      if (delta > 0) {
-        savingsHtml = `<span class="sp-savings cheaper">-$${Math.round(delta)} (${pct}% less)</span>`;
-      } else if (delta < 0) {
-        savingsHtml = `<span class="sp-savings pricier">+$${Math.round(Math.abs(delta))} more</span>`;
-      }
+  const srcPrice = parsePrice(currentProduct?.price);
+  const candPrice = parsePrice(listing.priceValue || listing.price);
+  if (srcPrice > 0 && candPrice > 0 && Math.abs(srcPrice - candPrice) > 1) {
+    const delta = srcPrice - candPrice;
+    const pct = Math.round((Math.abs(delta) / srcPrice) * 100);
+    if (delta > 0) {
+      savingsHtml = `<span class="sp-savings cheaper">▼ $${Math.round(delta).toLocaleString()} less (${pct}% off)</span>`;
+    } else {
+      savingsHtml = `<span class="sp-savings pricier">▲ $${Math.round(Math.abs(delta)).toLocaleString()} more (+${pct}%)</span>`;
     }
   }
 
   const priceText = listing.price || '';
   const imgSrc = listing.img || listing.imageUrl || '';
 
+  const platform = listing.platform || listing.source || '';
+  const faviconUrl = getPlatformFavicon(platform);
+
   a.innerHTML = `
     ${imgSrc ? `<img class="sp-listing-img" src="${esc(imgSrc)}" alt="" />` : '<div class="sp-listing-img"></div>'}
     <div class="sp-listing-info">
-      <div class="sp-listing-title">${esc(listing.title || '')}</div>
+      <div class="sp-listing-title">
+        ${faviconUrl ? `<img class="sp-platform-icon" src="${esc(faviconUrl)}" alt="${esc(platform)}" />` : ''}
+        ${esc(listing.title || '')}
+      </div>
       <div class="sp-listing-price-row">
         <span class="sp-listing-price">${esc(priceText)}</span>
         ${savingsHtml}
@@ -318,39 +408,85 @@ function renderListing(listing) {
   return a;
 }
 
-function populateFilterOptions() {
-  const values = { color: new Set(), size: new Set(), material: new Set(), condition: new Set() };
-  for (const r of allResults) {
-    if (r.attrs) {
-      (r.attrs.colors || []).forEach((v) => values.color.add(v));
-      (r.attrs.sizes || []).forEach((v) => values.size.add(v));
-      (r.attrs.materials || []).forEach((v) => values.material.add(v));
-      (r.attrs.conditions || []).forEach((v) => values.condition.add(v));
-    }
-    if (r.color) values.color.add(r.color);
-    if (r.size) values.size.add(r.size);
-    if (r.material) values.material.add(r.material);
-    if (r.condition) values.condition.add(r.condition);
-  }
+// Inline keyword lists for title scanning.
+const FILTER_COLORS = ['black','white','beige','brown','red','pink','blue','green','grey','gray','gold','silver','orange','yellow','purple','navy','cream','ivory','tan','nude','burgundy','cognac'];
+const FILTER_MATERIALS = ['leather','canvas','suede','silk','denim','tweed','nylon','velvet','satin','wool','cashmere','cotton','patent','lambskin','caviar','calfskin'];
+const FILTER_BRANDS = [
+  'chanel','louis vuitton','gucci','hermes','hermès','dior','prada','fendi','bottega veneta',
+  'balenciaga','saint laurent','ysl','celine','céline','loewe','valentino','burberry',
+  'versace','givenchy','miu miu','coach','michael kors','kate spade','tory burch',
+  'cartier','tiffany','rolex','omega','ferragamo','goyard','bulgari','tod\'s',
+  'jimmy choo','alexander mcqueen','stella mccartney','marc jacobs','off-white',
+  'rick owens','chrome hearts',
+];
 
-  for (const [key, set] of Object.entries(values)) {
-    const el = filterEls[key];
-    const current = el.value;
-    const firstOpt = el.options[0]; // "Any ..."
-    el.innerHTML = '';
-    el.appendChild(firstOpt);
-    for (const v of [...set].sort()) {
-      const opt = document.createElement('option');
-      opt.value = v;
-      opt.textContent = v;
-      if (v === current) opt.selected = true;
-      el.appendChild(opt);
-    }
+const FILTER_MODELS = [
+  'classic flap','boy','wallet on chain','woc','2.55','reissue','gabrielle','19','coco handle','deauville',
+  'speedy','neverfull','alma','pochette','keepall','dauphine','capucines','twist','petite malle',
+  'birkin','kelly','constance','evelyne','picotin','lindy','bolide','garden party',
+  'lady dior','saddle','book tote','30 montaigne','bobby',
+  'peekaboo','baguette','kan i','first','roma',
+  'dionysus','marmont','jackie','bamboo','ophidia','horsebit',
+  'puzzle','hammock','basket','flamenco','gate',
+  'rockstud','roman stud',
+  'city','le cagole','hourglass','neo classic',
+  'luggage','belt bag','triomphe','teen','ava',
+  'cassette','pouch','jodie','arco','padded',
+  're-edition','galleria','double bag','cleo','matinee',
+  'tb bag','lola','olympia','note',
+  // Gucci
+  'jacquard','soho','gg marmont','supreme','ophidia','dionysus','jackie','bamboo','horsebit','blondie','attache',
+  // More
+  'antigona','pandora','nightingale','shark','papier','motorcity','knife',
+  'phantom','seau sangle','cabas','ava','triomphe','teen triomphe',
+  'flamenco','puzzle','hammock','gate','basket',
+  'mini kelly','kelly pochette','birkin 25','birkin 30','birkin 35',
+  'chanel 19','classic double flap','jumbo','maxi','east west',
+  'monogram','damier','epi','vernis','empreinte',
+];
+const FILTER_CONDITIONS = ['new','like new','excellent','very good','good','fair','pre-owned','used','nwt','nwot'];
+
+function scanTitle(title, keywords) {
+  const lower = (title || '').toLowerCase();
+  const found = new Set();
+  for (const kw of keywords) {
+    // Word boundary check to avoid partial matches.
+    const regex = new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
+    if (regex.test(lower)) found.add(kw.charAt(0).toUpperCase() + kw.slice(1));
   }
+  return found;
+}
+
+// populateFilterOptions is now inline in renderResults for cascading behavior.
+
+function matchesFilter(r, key, filterVal) {
+  const searchText = [r[key], r.title, r.condition].filter(Boolean).join(' ').toLowerCase();
+  return searchText.includes(filterVal);
+}
+
+function parsePrice(val) {
+  if (typeof val === 'number') return val;
+  if (!val) return 0;
+  return parseFloat(String(val).replace(/[^0-9.]/g, '')) || 0;
 }
 
 function esc(s) {
   const d = document.createElement('div');
   d.textContent = s || '';
   return d.innerHTML;
+}
+
+function getPlatformFavicon(platform) {
+  const domains = {
+    ebay: 'www.ebay.com',
+    therealreal: 'www.therealreal.com',
+    poshmark: 'poshmark.com',
+    vestiaire: 'www.vestiairecollective.com',
+    grailed: 'www.grailed.com',
+    mercari: 'www.mercari.com',
+    shopgoodwill: 'shopgoodwill.com',
+    'google-shopping': 'www.google.com',
+  };
+  const domain = domains[platform];
+  return domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : null;
 }

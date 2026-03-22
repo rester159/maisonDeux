@@ -52,15 +52,17 @@
   <!-- Filters -->
   <section id="filter-section" class="hidden">
     <div class="sp-filters">
+      <select id="filter-brand" class="sp-filter"><option value="">Any Brand</option></select>
       <select id="filter-color" class="sp-filter"><option value="">Any Color</option></select>
-      <select id="filter-size" class="sp-filter"><option value="">Any Size</option></select>
+      <select id="filter-model" class="sp-filter"><option value="">Any Model</option></select>
       <select id="filter-material" class="sp-filter"><option value="">Any Material</option></select>
       <select id="filter-condition" class="sp-filter"><option value="">Any Condition</option></select>
       <div class="sp-filter-row">
         <label class="sp-hint">Min relevance:</label>
         <select id="filter-relevance" class="sp-filter">
+          <option value="0" selected>Any</option>
           <option value="0.3">30%</option>
-          <option value="0.5" selected>50%</option>
+          <option value="0.5">50%</option>
           <option value="0.7">70%</option>
           <option value="0.85">85%</option>
         </select>

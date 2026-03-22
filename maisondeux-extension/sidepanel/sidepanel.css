@@ -108,10 +108,17 @@ body {
 
 .sp-chip {
   display: inline-block;
-  padding: 2px 8px; border-radius: 4px;
+  padding: 3px 10px; border-radius: 12px;
   font-size: 11px; font-weight: 600;
   background: #f0ebe5; color: #6b5b4e;
 }
+
+.sp-chip-price    { background: #2c2218; color: #fff; }
+.sp-chip-color    { background: #e3f2fd; color: #1565c0; }
+.sp-chip-model    { background: #f3e5f5; color: #7b1fa2; }
+.sp-chip-material { background: #fff3e0; color: #e65100; }
+.sp-chip-condition { background: #e8f5e9; color: #2e7d32; }
+.sp-chip-category { background: #f0ebe5; color: #6b5b4e; }
 
 /* ---- Filters ---- */
 
@@ -192,6 +199,12 @@ body {
   font-size: 12px; font-weight: 500; color: #2c2218;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-bottom: 2px;
+  display: flex; align-items: center; gap: 4px;
+}
+
+.sp-platform-icon {
+  width: 14px; height: 14px; flex-shrink: 0;
+  border-radius: 2px;
 }
 
 .sp-listing-price-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
