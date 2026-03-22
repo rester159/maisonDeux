@@ -477,7 +477,7 @@ function renderListing(listing) {
 
 // Inline keyword lists for title scanning.
 const FILTER_COLORS = ['black','white','beige','brown','red','pink','blue','green','grey','gray','gold','silver','orange','yellow','purple','navy','cream','ivory','tan','nude','burgundy','cognac'];
-const FILTER_MATERIALS = ['leather','canvas','suede','silk','denim','tweed','nylon','velvet','satin','wool','cashmere','cotton','patent','lambskin','caviar','calfskin'];
+const FILTER_MATERIALS = ['leather','canvas','suede','silk','denim','tweed','nylon','velvet','satin','wool','cashmere','cotton','patent','lambskin','caviar','calfskin','gg supreme','monogram','damier','epi','vernis','empreinte','coated canvas'];
 const FILTER_BRANDS = [
   'chanel','louis vuitton','gucci','hermes','hermès','dior','prada','fendi','bottega veneta',
   'balenciaga','saint laurent','ysl','celine','céline','loewe','valentino','burberry',
@@ -502,14 +502,13 @@ const FILTER_MODELS = [
   're-edition','galleria','double bag','cleo','matinee',
   'tb bag','lola','olympia','note',
   // Gucci
-  'jacquard','soho','gg marmont','supreme','ophidia','dionysus','jackie','bamboo','horsebit','blondie','attache',
+  'jacquard','soho','gg marmont','ophidia','dionysus','jackie','bamboo','horsebit','blondie','attache',
   // More
   'antigona','pandora','nightingale','shark','papier','motorcity','knife',
   'phantom','seau sangle','cabas','ava','triomphe','teen triomphe',
   'flamenco','puzzle','hammock','gate','basket',
   'mini kelly','kelly pochette','birkin 25','birkin 30','birkin 35',
   'chanel 19','classic double flap','jumbo','maxi','east west',
-  'monogram','damier','epi','vernis','empreinte',
 ];
 const FILTER_CONDITIONS = ['new','like new','excellent','very good','good','fair','pre-owned','used','nwt','nwot'];
 

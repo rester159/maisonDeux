@@ -214,7 +214,26 @@
   }
 
   function inferBrand(title) {
+    // Try dash/pipe pattern first: "BRAND - description"
     const m = title.match(/^([A-Za-z\s&']+?)\s*[-–—|]/);
-    return m ? m[1].trim() : '';
+    if (m) return m[1].trim();
+
+    // Try matching first word(s) against known luxury brands.
+    const lower = (title || '').toLowerCase();
+    const KNOWN_BRANDS = [
+      'chanel', 'louis vuitton', 'gucci', 'hermes', 'hermès', 'dior', 'christian dior',
+      'prada', 'fendi', 'bottega veneta', 'balenciaga', 'saint laurent', 'ysl',
+      'celine', 'céline', 'loewe', 'valentino', 'burberry', 'versace', 'givenchy',
+      'miu miu', 'coach', 'michael kors', 'kate spade', 'tory burch', 'cartier',
+      'tiffany', 'rolex', 'omega', 'ferragamo', 'goyard', 'bulgari', 'jimmy choo',
+      'alexander mcqueen', 'stella mccartney', 'marc jacobs', 'off-white', 'rick owens',
+      'chrome hearts', 'dolce & gabbana', 'tod\'s', 'bottega', 'van cleef',
+    ];
+    for (const brand of KNOWN_BRANDS) {
+      if (lower.startsWith(brand + ' ') || lower === brand) {
+        return brand.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      }
+    }
+    return '';
   }
 })();
