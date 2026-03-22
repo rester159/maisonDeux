@@ -392,10 +392,25 @@ function renderResults() {
   // Auto-set filters on first results if not already done.
   if (!filtersAutoSet && currentProductAttrs && allResults.length > 0) {
     filtersAutoSet = true;
-    if (filterEls.brand && currentProductAttrs.brand) filterEls.brand.value = currentProductAttrs.brand;
-    if (filterEls.color && currentProductAttrs.color) filterEls.color.value = currentProductAttrs.color;
-    if (filterEls.model && currentProductAttrs.model) filterEls.model.value = currentProductAttrs.model;
-    if (filterEls.material && currentProductAttrs.material) filterEls.material.value = currentProductAttrs.material;
+
+    // Try to match each filter against available options.
+    function autoSet(el, targetVal) {
+      if (!el || !targetVal) return;
+      const target = targetVal.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      for (const opt of el.options) {
+        const optNorm = opt.value.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        if (optNorm === target || opt.value === targetVal) {
+          el.value = opt.value;
+          return;
+        }
+      }
+    }
+
+    autoSet(filterEls.brand, currentProductAttrs.brand);
+    autoSet(filterEls.color, currentProductAttrs.color);
+    autoSet(filterEls.model, currentProductAttrs.model);
+    autoSet(filterEls.material, currentProductAttrs.material);
+
     // Re-filter with auto-set values.
     return renderResults();
   }
