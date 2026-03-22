@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MaisonDeux</title>
+  <link rel="stylesheet" href="sidepanel.css" />
+</head>
+<body>
+  <header class="sp-header">
+    <div class="sp-brand">
+      <span class="sp-logo">M</span>
+      <span class="sp-title">MaisonDeux</span>
+    </div>
+    <div class="sp-controls">
+      <label class="sp-toggle" title="Enable/disable deal scanning">
+        <input type="checkbox" id="toggle-active" checked />
+        <span class="sp-toggle-slider"></span>
+      </label>
+      <button id="settings-btn" class="sp-icon-btn" title="Settings">&#9881;</button>
+    </div>
+  </header>
+
+  <!-- States -->
+  <div id="state-off" class="sp-state hidden">
+    <p class="sp-state-icon">&#9209;</p>
+    <p>MaisonDeux is paused.</p>
+    <p class="sp-hint">Toggle the switch above to start scanning.</p>
+  </div>
+
+  <div id="state-idle" class="sp-state">
+    <p class="sp-state-icon">&#128270;</p>
+    <p>Navigate to a product page on a supported site.</p>
+    <p class="sp-hint">eBay, TheRealReal, Poshmark, Vestiaire, Grailed, Mercari, ShopGoodwill</p>
+  </div>
+
+  <div id="state-scanning" class="sp-state hidden">
+    <div class="sp-spinner"></div>
+    <p id="scan-status">Scanning platforms...</p>
+  </div>
+
+  <!-- Product context -->
+  <section id="product-context" class="hidden">
+    <div class="sp-product-card">
+      <p class="sp-viewing">Currently viewing on <span id="product-platform"></span></p>
+      <h2 id="product-name"></h2>
+      <p class="sp-price" id="product-price"></p>
+      <div id="product-attrs" class="sp-chips"></div>
+    </div>
+  </section>
+
+  <!-- Filters -->
+  <section id="filter-section" class="hidden">
+    <div class="sp-filters">
+      <select id="filter-color" class="sp-filter"><option value="">Any Color</option></select>
+      <select id="filter-size" class="sp-filter"><option value="">Any Size</option></select>
+      <select id="filter-material" class="sp-filter"><option value="">Any Material</option></select>
+      <select id="filter-condition" class="sp-filter"><option value="">Any Condition</option></select>
+      <div class="sp-filter-row">
+        <label class="sp-hint">Min relevance:</label>
+        <select id="filter-relevance" class="sp-filter">
+          <option value="0.3">30%</option>
+          <option value="0.5" selected>50%</option>
+          <option value="0.7">70%</option>
+          <option value="0.85">85%</option>
+        </select>
+        <a href="#" id="clear-filters" class="sp-clear-filters hidden">Clear filters</a>
+      </div>
+    </div>
+  </section>
+
+  <!-- Results -->
+  <section id="results-section" class="hidden">
+    <div id="results-summary" class="sp-summary"></div>
+    <div id="results-list" class="sp-results"></div>
+  </section>
+
+  <footer class="sp-footer">
+    <span>Powered by MaisonDeux</span>
+  </footer>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>

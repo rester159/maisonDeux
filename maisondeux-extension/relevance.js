@@ -1,79 +1,228 @@
 /**
  * @file relevance.js
- * @description Scores how relevant a cross-platform search result is to the
- * product currently being viewed. Considers brand, category, model name,
- * and condition to filter noise from search results.
+ * @description Relevance scoring and ranking for cross-platform deal comparison.
+ *
+ * Exports:
+ *  - scoreRelevance(source, candidate) — detailed score with breakdown
+ *  - filterAndRank(sourceAttrs, results, options) — filter, score, sort, return top deals
  */
 
-/**
- * @typedef {Object} Product
- * @property {string}  brand     - Brand name (e.g. "Gucci").
- * @property {string}  title     - Full listing title.
- * @property {string}  category  - Normalized category key.
- * @property {string}  condition - Normalized condition key.
- * @property {number}  price     - Listing price in its original currency.
- * @property {string}  currency  - ISO 4217 currency code.
- * @property {string}  url       - Canonical listing URL.
- * @property {string}  platform  - Platform identifier (e.g. "therealreal").
- */
+import { COLOR_FAMILIES } from './taxonomy.js';
+
+// ---------------------------------------------------------------------------
+// Scoring weights (total = 100)
+// ---------------------------------------------------------------------------
+
+const WEIGHTS = {
+  brand:    30,
+  model:    25,
+  color:    12,
+  size:     12,
+  material: 10,
+  hardware:  6,
+  category:  5,
+};
+
+const TOTAL_WEIGHT = Object.values(WEIGHTS).reduce((a, b) => a + b, 0);
+
+// ---------------------------------------------------------------------------
+// 1. scoreRelevance
+// ---------------------------------------------------------------------------
 
 /**
- * Compute a relevance score (0–1) between a source product and a candidate.
- * @param {Product} source    - The product the user is currently viewing.
- * @param {Product} candidate - A search result from another platform.
- * @returns {number} Score between 0 (unrelated) and 1 (near-certain match).
+ * Compare a source product's attributes against a candidate listing.
+ * @param {Object} source    - Classified source product attributes.
+ * @param {Object} candidate - Classified candidate listing attributes.
+ * @returns {{ score: number, label: string, breakdown: Object }}
  */
 export function scoreRelevance(source, candidate) {
-  let score = 0;
+  const breakdown = {};
+  let weightedSum = 0;
+  let applicableWeight = 0;
 
-  // Brand match (most important signal).
-  if (source.brand && candidate.brand) {
-    if (normalize(source.brand) === normalize(candidate.brand)) {
-      score += 0.4;
-    } else {
-      return 0; // Different brand — not the same product.
+  for (const [attr, weight] of Object.entries(WEIGHTS)) {
+    const srcVal = source[attr];
+    const candVal = candidate[attr];
+
+    // If source doesn't have this attribute, skip it entirely.
+    if (!srcVal) continue;
+
+    applicableWeight += weight;
+
+    if (!candVal) {
+      // Candidate missing an attribute the source has — benefit of the doubt.
+      const score = 0.2;
+      weightedSum += score * weight;
+      breakdown[attr] = { score, reason: 'candidate missing', source: srcVal, candidate: null };
+      continue;
     }
+
+    let score = 0;
+    let reason = 'no match';
+
+    switch (attr) {
+      case 'brand':
+        score = exactMatch(srcVal, candVal) ? 1.0 : 0.0;
+        reason = score ? 'exact' : 'different brand';
+        break;
+
+      case 'model':
+        if (exactMatch(srcVal, candVal)) { score = 1.0; reason = 'exact'; }
+        else { score = fuzzyMatch(srcVal, candVal, 0.5); reason = score > 0 ? 'fuzzy' : 'different model'; }
+        break;
+
+      case 'color':
+        if (exactMatch(srcVal, candVal)) { score = 1.0; reason = 'exact'; }
+        else { score = colorFamilyMatch(srcVal, candVal); reason = score > 0 ? 'same family' : 'different color'; }
+        break;
+
+      case 'size':
+        score = sizeMatch(srcVal, candVal);
+        reason = score >= 1 ? 'exact' : score > 0 ? 'adjacent' : 'different size';
+        break;
+
+      case 'material':
+      case 'hardware':
+      case 'category':
+        if (exactMatch(srcVal, candVal)) { score = 1.0; reason = 'exact'; }
+        else { score = fuzzyMatch(srcVal, candVal, 0.6); reason = score > 0 ? 'fuzzy' : 'no match'; }
+        break;
+    }
+
+    weightedSum += score * weight;
+    breakdown[attr] = { score, reason, source: srcVal, candidate: candVal };
   }
 
-  // Category match.
-  if (source.category && candidate.category && source.category === candidate.category) {
-    score += 0.2;
-  }
+  const finalScore = applicableWeight > 0 ? weightedSum / applicableWeight : 0;
+  const label = scoreLabel(finalScore);
 
-  // Title similarity (keyword overlap).
-  const srcWords = tokenize(source.title);
-  const candWords = tokenize(candidate.title);
-  if (srcWords.size && candWords.size) {
-    const intersection = new Set([...srcWords].filter((w) => candWords.has(w)));
-    const overlap = intersection.size / Math.max(srcWords.size, candWords.size);
-    score += overlap * 0.3;
-  }
-
-  // Condition similarity bonus.
-  if (source.condition && candidate.condition && source.condition === candidate.condition) {
-    score += 0.1;
-  }
-
-  return Math.min(score, 1);
+  return { score: Math.round(finalScore * 100) / 100, label, breakdown };
 }
 
-/**
- * Normalize a string for comparison (lowercase, trimmed).
- * @param {string} s
- * @returns {string}
- */
-function normalize(s) {
-  return (s || '').toLowerCase().trim();
-}
+// ---------------------------------------------------------------------------
+// 2. filterAndRank
+// ---------------------------------------------------------------------------
 
 /**
- * Tokenize a title into a set of meaningful lowercase words.
- * Strips common filler words and short tokens.
- * @param {string} title
- * @returns {Set<string>}
+ * Score, filter, and rank an array of candidate results against source attributes.
+ * @param {Object}   sourceAttrs - Classified source product attributes.
+ * @param {Object[]} results     - Array of candidate listings (with attrs).
+ * @param {Object}   [options]
+ * @param {number}   [options.minScore=0.3]
+ * @param {number}   [options.maxResults=20]
+ * @returns {Object[]} Sorted, scored, filtered results with priceDelta.
  */
-function tokenize(title) {
-  const STOP = new Set(['the', 'a', 'an', 'and', 'or', 'in', 'on', 'for', 'with', 'of', 'by', 'to', 'new', 'used']);
-  const words = (title || '').toLowerCase().split(/\W+/).filter((w) => w.length > 2 && !STOP.has(w));
-  return new Set(words);
+export function filterAndRank(sourceAttrs, results, options = {}) {
+  const { minScore = 0.3, maxResults = 20 } = options;
+  const sourcePrice = parseFloat(String(sourceAttrs.price || '').replace(/[^0-9.]/g, '')) || 0;
+
+  const scored = results.map((candidate) => {
+    const candAttrs = candidate.attrs || candidate;
+    const { score, label, breakdown } = scoreRelevance(sourceAttrs, candAttrs);
+
+    // Compute price delta.
+    const candPrice = parseFloat(String(candidate.price || '').replace(/[^0-9.]/g, '')) || 0;
+    let priceDelta = null;
+    if (sourcePrice > 0 && candPrice > 0) {
+      const absolute = sourcePrice - candPrice;
+      const percentage = Math.round((Math.abs(absolute) / sourcePrice) * 100);
+      const isCheaper = absolute > 0;
+      const deltaLabel = isCheaper
+        ? `$${Math.round(absolute)} less (${percentage}% off)`
+        : `$${Math.round(Math.abs(absolute))} more (+${percentage}%)`;
+      priceDelta = { absolute, percentage, isCheaper, label: deltaLabel };
+    }
+
+    return {
+      ...candidate,
+      relevanceScore: score,
+      relevanceLabel: label,
+      relevanceBreakdown: breakdown,
+      priceDelta,
+    };
+  });
+
+  // Filter below minScore.
+  const filtered = scored.filter((r) => r.relevanceScore >= minScore);
+
+  // Sort: relevance desc, then price asc.
+  filtered.sort((a, b) => {
+    if (b.relevanceScore !== a.relevanceScore) return b.relevanceScore - a.relevanceScore;
+    const priceA = parseFloat(String(a.price || '').replace(/[^0-9.]/g, '')) || Infinity;
+    const priceB = parseFloat(String(b.price || '').replace(/[^0-9.]/g, '')) || Infinity;
+    return priceA - priceB;
+  });
+
+  return filtered.slice(0, maxResults);
+}
+
+// ---------------------------------------------------------------------------
+// Match helpers
+// ---------------------------------------------------------------------------
+
+function exactMatch(a, b) {
+  return (a || '').toLowerCase().trim() === (b || '').toLowerCase().trim();
+}
+
+function fuzzyMatch(a, b, threshold) {
+  const la = (a || '').toLowerCase().trim();
+  const lb = (b || '').toLowerCase().trim();
+
+  // Substring inclusion.
+  if (la.includes(lb) || lb.includes(la)) return 0.85;
+
+  // Jaccard word similarity.
+  const wordsA = new Set(la.split(/\W+/).filter(Boolean));
+  const wordsB = new Set(lb.split(/\W+/).filter(Boolean));
+  if (!wordsA.size || !wordsB.size) return 0;
+
+  const intersection = [...wordsA].filter((w) => wordsB.has(w)).length;
+  const union = new Set([...wordsA, ...wordsB]).size;
+  const jaccard = intersection / union;
+
+  return jaccard >= threshold ? jaccard : 0;
+}
+
+function colorFamilyMatch(source, candidate) {
+  const srcFamily = COLOR_FAMILIES[source];
+  const candFamily = COLOR_FAMILIES[candidate];
+  if (srcFamily && candFamily && srcFamily === candFamily) return 0.6;
+  return 0;
+}
+
+function sizeMatch(a, b) {
+  const la = (a || '').toLowerCase().trim();
+  const lb = (b || '').toLowerCase().trim();
+
+  if (la === lb) return 1.0;
+
+  // Adjacent sizes.
+  const sizeOrder = ['nano', 'micro', 'mini', 'small', 'small/medium', 'medium', 'large', 'jumbo', 'maxi', 'extra large', 'xxl'];
+  const idxA = sizeOrder.indexOf(la);
+  const idxB = sizeOrder.indexOf(lb);
+  if (idxA >= 0 && idxB >= 0) {
+    const diff = Math.abs(idxA - idxB);
+    if (diff === 1) return 0.4;
+    return 0;
+  }
+
+  // Numeric sizes (e.g. shoe sizes, cm).
+  const numA = parseFloat(la);
+  const numB = parseFloat(lb);
+  if (!isNaN(numA) && !isNaN(numB)) {
+    const diff = Math.abs(numA - numB);
+    if (diff <= 0.5) return 0.9;
+    if (diff <= 1.0) return 0.6;
+    return 0;
+  }
+
+  return 0;
+}
+
+function scoreLabel(score) {
+  if (score >= 0.85) return 'Exact Match';
+  if (score >= 0.70) return 'Very Similar';
+  if (score >= 0.50) return 'Similar';
+  if (score >= 0.30) return 'Related';
+  return 'Weak Match';
 }

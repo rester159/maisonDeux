@@ -1,14 +1,15 @@
 {
   "manifest_version": 3,
   "name": "MaisonDeux",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Second-hand luxury deal finder — compare prices across resale platforms.",
   "permissions": [
     "offscreen",
     "activeTab",
     "storage",
     "scripting",
-    "declarativeNetRequest"
+    "declarativeNetRequest",
+    "sidePanel"
   ],
   "host_permissions": [
     "*://*.therealreal.com/*",
@@ -76,8 +77,10 @@
       }
     ]
   },
+  "side_panel": {
+    "default_path": "sidepanel/sidepanel.html"
+  },
   "action": {
-    "default_popup": "popup/popup.html",
     "default_icon": {
       "16": "icons/icon-16.png",
       "48": "icons/icon-48.png",
