@@ -286,7 +286,14 @@ function showProduct(product) {
   }
 
   // Store detected attributes for auto-setting filters after results arrive.
-  currentProductAttrs = { brand: (brand || '').toLowerCase(), color: (colors || '').toLowerCase(), model: (model || '').toLowerCase(), material: (material || '').toLowerCase() };
+  currentProductAttrs = {
+    brand: (brand || '').toLowerCase(),
+    store: '', // Don't auto-set store — user wants to see other stores.
+    color: (colors || '').toLowerCase(),
+    model: (model || '').toLowerCase(),
+    material: (material || '').toLowerCase(),
+    condition: (condition || '').toLowerCase(),
+  };
   filtersAutoSet = false;
 }
 
@@ -411,6 +418,7 @@ function renderResults() {
     autoSet(filterEls.color, currentProductAttrs.color);
     autoSet(filterEls.model, currentProductAttrs.model);
     autoSet(filterEls.material, currentProductAttrs.material);
+    autoSet(filterEls.condition, currentProductAttrs.condition);
 
     // Re-filter with auto-set values.
     return renderResults();

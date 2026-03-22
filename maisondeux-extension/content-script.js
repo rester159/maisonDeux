@@ -127,28 +127,7 @@
     };
 
     if (hostname.includes('therealreal.com')) {
-      // Grab ALL visible text from the product page for description.
-      const allPageText = grabAllText([
-        'ul li', // Bullet point descriptions
-        '.product-details', '[data-testid="product-description"]',
-        '.pdp-description', '[itemprop="description"]',
-        '.product-details__description', '.product-details__condition',
-        'section', 'main',
-      ]);
-
-      return {
-        brand: q('[data-testid="designer-name"], .product-details__designer, .pdp-designer-name, h2 a[href*="/designers/"]'),
-        productName: q('[data-testid="product-name"], .product-details__name, h1, .pdp-product-name'),
-        title: q('[data-testid="product-name"], .product-details__name, h1'),
-        description: allPageText,
-        category: q('[data-testid="breadcrumb"], .breadcrumbs, nav[aria-label="breadcrumb"]'),
-        conditionText: q('.product-details__condition, [data-testid="condition"]'),
-        price: price('[data-testid="price"]', '.product-details__price', '.pdp-price', '[itemprop="price"]', 'p[class*="price"]', 'span[class*="Price"]'),
-        currency: 'USD',
-        url: window.location.href,
-        platform: 'therealreal',
-        imageUrl: document.querySelector('.pdp-image img, [data-testid="product-image"] img, .product-media img')?.src || document.querySelector('meta[property="og:image"]')?.content || '',
-      };
+      return universalExtract('therealreal');
     }
 
     if (hostname.includes('ebay.com')) {
