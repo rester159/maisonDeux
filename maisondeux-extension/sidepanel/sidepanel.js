@@ -42,6 +42,8 @@ let allResults = []; // all scored results received so far
 let searchComplete = false;
 let platformsSearched = 0;
 let totalPlatforms = 0;
+let currentProductAttrs = null; // { brand, color, model, material }
+let filtersAutoSet = false;
 
 // ---- Init ----
 
@@ -239,8 +241,9 @@ function showProduct(product) {
     $productAttrs.appendChild(chip);
   }
 
-  // Auto-set filters to match the current product's attributes.
-  autoSetFilters(product, { colors, model, material, condition });
+  // Store detected attributes for auto-setting filters after results arrive.
+  currentProductAttrs = { brand: (product.brand || '').toLowerCase(), color: (colors || '').toLowerCase(), model: (model || '').toLowerCase(), material: (material || '').toLowerCase() };
+  filtersAutoSet = false;
 }
 
 function showScanning() {
@@ -336,6 +339,17 @@ function renderResults() {
     return el && el.style.display !== 'none' && el.options.length > 1;
   });
   $filterSection.classList.toggle('hidden', !anyFilterVisible);
+
+  // Auto-set filters on first results if not already done.
+  if (!filtersAutoSet && currentProductAttrs && allResults.length > 0) {
+    filtersAutoSet = true;
+    if (filterEls.brand && currentProductAttrs.brand) filterEls.brand.value = currentProductAttrs.brand;
+    if (filterEls.color && currentProductAttrs.color) filterEls.color.value = currentProductAttrs.color;
+    if (filterEls.model && currentProductAttrs.model) filterEls.model.value = currentProductAttrs.model;
+    if (filterEls.material && currentProductAttrs.material) filterEls.material.value = currentProductAttrs.material;
+    // Re-filter with auto-set values.
+    return renderResults();
+  }
 
   updateFilterStyles();
 
@@ -498,33 +512,6 @@ function scanTitle(title, keywords) {
 
 // populateFilterOptions is now inline in renderResults for cascading behavior.
 
-/**
- * Auto-set filter dropdowns to match the source product's detected attributes.
- * Only sets if the filter is currently at its default ("") value.
- */
-function autoSetFilters(product, detected) {
-  const brand = (product.brand || '').toLowerCase();
-  const platform = (product.platform || product.source || '').toLowerCase();
-
-  if (filterEls.brand && !filterEls.brand.value && brand) {
-    filterEls.brand.value = brand;
-  }
-  if (filterEls.store && !filterEls.store.value && platform) {
-    // Don't auto-set store — user wants to see OTHER stores.
-  }
-  if (filterEls.color && !filterEls.color.value && detected.colors) {
-    filterEls.color.value = (detected.colors || '').toLowerCase();
-  }
-  if (filterEls.model && !filterEls.model.value && detected.model) {
-    filterEls.model.value = (detected.model || '').toLowerCase();
-  }
-  if (filterEls.material && !filterEls.material.value && detected.material) {
-    filterEls.material.value = (detected.material || '').toLowerCase();
-  }
-  // Don't auto-set condition — user wants to see all conditions.
-
-  updateFilterStyles();
-}
 
 const STORE_NAMES = {
   ebay: 'eBay',
