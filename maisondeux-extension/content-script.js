@@ -205,8 +205,11 @@
     // Get the page title (h1).
     const title = document.querySelector('h1')?.textContent?.trim() || document.title || '';
 
-    // Get ALL visible text from the page body (limited to 3000 chars).
-    const bodyText = document.body?.innerText?.slice(0, 3000) || '';
+    // Get ALL text from the page — innerText for visible, plus textContent
+    // for hidden/collapsed sections (like TheRealReal's collapsed description).
+    const visibleText = document.body?.innerText?.slice(0, 3000) || '';
+    const hiddenText = document.body?.textContent?.slice(0, 5000) || '';
+    const bodyText = visibleText + ' ' + hiddenText;
 
     // Detect brand from known brands list.
     const brand = inferBrand(title) || inferBrand(bodyText);
@@ -266,7 +269,7 @@
       brand,
       productName: title,
       title,
-      description: bodyText,
+      description: bodyText.slice(0, 3000),
       category: document.querySelector('nav[aria-label="breadcrumb"] a:last-child, .breadcrumb a:last-child')?.textContent?.trim() || '',
       conditionText,
       price: detectedPrice,
