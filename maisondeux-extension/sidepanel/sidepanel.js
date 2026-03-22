@@ -605,7 +605,20 @@ const FILTER_MODELS = [
   'chanel 19','classic double flap','jumbo','maxi','east west',
 ];
 const FILTER_HARDWARE = ['gold hardware','gold-plated hardware','gold-plated','ghw','silver hardware','shw','palladium hardware','phw','ruthenium hardware','rhw','rose gold hardware','rghw'];
-const FILTER_CONDITIONS = ['new','like new','excellent','very good','good','fair','pre-owned','used','nwt','nwot'];
+const CONDITION_MAP = {
+  'new': 'New', 'nwt': 'New', 'new with tags': 'New', 'brand new': 'New',
+  'bnwt': 'New', 'bnib': 'New', 'never worn': 'New', 'deadstock': 'New',
+  'unworn': 'New', 'unused': 'New',
+  'like new': 'Excellent', 'mint': 'Excellent', 'pristine': 'Excellent',
+  'excellent': 'Excellent', 'nwot': 'Excellent', 'new without tags': 'Excellent',
+  'immaculate': 'Excellent', 'flawless': 'Excellent',
+  'very good': 'Very Good', 'very good condition': 'Very Good', 'great': 'Very Good',
+  'good': 'Good', 'gently used': 'Good', 'pre-owned': 'Good', 'pre owned': 'Good',
+  'good condition': 'Good', 'preowned': 'Good',
+  'fair': 'Fair', 'well worn': 'Fair', 'used': 'Fair', 'heavily used': 'Fair',
+  'damaged': 'Fair', 'as is': 'Fair', 'shows wear': 'Fair',
+};
+const FILTER_CONDITIONS = Object.keys(CONDITION_MAP);
 
 // Display names for keywords that need special capitalization.
 const DISPLAY_NAMES = {
@@ -646,8 +659,8 @@ function scanTitle(title, keywords) {
   for (const kw of keywords) {
     const regex = new RegExp('\\b' + kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\b', 'i');
     if (regex.test(lower)) {
-      // Use canonical mapping for colors/materials, then display names, then Title Case.
-      const canonical = COLOR_MAP[kw] || MATERIAL_MAP[kw] || DISPLAY_NAMES[kw] || kw.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+      // Use canonical mapping for colors/materials/conditions, then display names, then Title Case.
+      const canonical = COLOR_MAP[kw] || MATERIAL_MAP[kw] || CONDITION_MAP[kw] || DISPLAY_NAMES[kw] || kw.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
       found.add(canonical);
     }
   }
