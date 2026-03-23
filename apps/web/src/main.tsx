@@ -5,6 +5,7 @@ import { LoginPage } from "./pages/LoginPage";
 import { DashboardLayout } from "./layouts/DashboardLayout";
 import { SettingsPage } from "./pages/SettingsPage";
 import { AnalyticsPage } from "./pages/AnalyticsPage";
+import { ComparePage } from "./pages/ComparePage";
 import "./App.css";
 
 function AppRouter() {
@@ -28,6 +29,9 @@ function AppRouter() {
 
   return (
     <Routes>
+      <Route path="/compare" element={<DashboardLayout onLogout={handleLogout} />}>
+        <Route index element={<ComparePage />} />
+      </Route>
       <Route element={<DashboardLayout onLogout={handleLogout} />}>
         <Route path="/" element={<Navigate to="/settings" replace />} />
         <Route path="/settings" element={<SettingsPage />} />

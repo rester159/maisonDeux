@@ -4,6 +4,8 @@ const API_BASE = window.location.origin;
 
 interface Analytics {
   dau: Array<{ day: string; users: number; events: number }>;
+  wau: number;
+  mau: number;
   breakdown: Array<{ event_category: string; event_action: string; count: number }>;
   favStats: { total_saves?: number; users_who_saved?: number; avg_per_user?: number };
   topPlatforms: Array<{ product_platform: string; clicks: number }>;
@@ -14,6 +16,7 @@ interface Analytics {
     favorites_saved?: number;
     condition_reports?: number;
   };
+  userFunnel: Array<{ tier: string; count: number }>;
 }
 
 export function AnalyticsPage() {
@@ -49,11 +52,30 @@ export function AnalyticsPage() {
 
       {/* KPI Cards */}
       <div style={styles.kpiGrid}>
-        <KpiCard label="Daily Active Users" value={todayEvents ? String(todayEvents.users) : "0"} sub="Today" />
-        <KpiCard label="Total Events" value={String(totalEvents)} sub="Last 30 days" />
-        <KpiCard label="Active Days" value={String(totalUsers)} sub="Last 30 days" />
-        <KpiCard label="Favorites Saved" value={String(data.favStats?.total_saves || 0)} sub={`${data.favStats?.users_who_saved || 0} users`} />
+        <KpiCard label="DAU" value={todayEvents ? String(todayEvents.users) : "0"} sub="Daily Active Users" />
+        <KpiCard label="WAU" value={String(data.wau || 0)} sub="Weekly Active Users" />
+        <KpiCard label="MAU" value={String(data.mau || 0)} sub="Monthly Active Users" />
+        <KpiCard label="Favorites" value={String(data.favStats?.total_saves || 0)} sub={`${data.favStats?.users_who_saved || 0} users saved`} />
       </div>
+
+      {/* User Tier Funnel */}
+      <section style={styles.section}>
+        <h2 style={styles.h2}>User Funnel</h2>
+        <div style={styles.funnel}>
+          {(data.userFunnel || []).length === 0 ? (
+            <p style={{ color: "#999", fontSize: 13 }}>No users registered yet.</p>
+          ) : (
+            <>
+              {(data.userFunnel || []).map((tier) => {
+                const maxCount = Math.max(...(data.userFunnel || []).map((t) => Number(t.count)));
+                return (
+                  <FunnelStep key={tier.tier} label={tierLabel(tier.tier)} value={Number(tier.count)} max={maxCount} />
+                );
+              })}
+            </>
+          )}
+        </div>
+      </section>
 
       {/* Funnel */}
       <section style={styles.section}>
@@ -143,6 +165,16 @@ export function AnalyticsPage() {
       </section>
     </div>
   );
+}
+
+function tierLabel(tier: string): string {
+  switch (tier) {
+    case "guest": return "Guest Users (no account)";
+    case "free": return "Registered (free tier)";
+    case "premium": return "Premium Subscribers";
+    case "admin": return "Admins";
+    default: return tier;
+  }
 }
 
 function KpiCard({ label, value, sub }: { label: string; value: string; sub: string }) {

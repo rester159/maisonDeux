@@ -11,17 +11,22 @@ This document defines the agent structure for the maisonDeux project. **Tier 1**
 │                    maisonDeux App                         │
 ├─────────────────────────────────────────────────────────┤
 │                                                          │
+│  PM Program Manager            ← spec keeper (see below)  │
 │  A  Attribute System          ← has sub-agents (Tier 2)   │
 │  B  Marketplace Connectors                               │
 │  C  Search & Ranking                                    │
 │  D  Image Intelligence                                  │
 │  E  Frontend & UX                                       │
+│  EX Browser Extension           ← bridge for login sites  │
 │  F  Pricing Intelligence                                │
 │  G  Infrastructure & DevOps                             │
 │  H  Data Quality & Testing                              │
 │                                                          │
 └─────────────────────────────────────────────────────────┘
 ```
+
+### PM — Program Manager
+**Spec keeper.** Task: capture the current website (and product) spec in extreme detail and keep it updated as the product evolves. Owns `docs/website-spec.md`. Example: the pill system (fixed categories, values from results, frequency-sorted carousel, dropdowns, per-value toggle, live filtering) must be documented there. When new features land (e.g. Queue, Profile, new filters), the Program Manager updates the spec so that any agent can read one source of truth.
 
 ### A — Attribute System
 Owns all reference data (brands, models, colors, materials, sizes), the extraction engine, and classification logic. Answers "what is this item?" Has dedicated sub-agents A.1–A.10 (see Tier 2).
@@ -30,13 +35,16 @@ Owns all reference data (brands, models, colors, materials, sizes), the extracti
 Owns every adapter (eBay, ShopGoodwill, TheRealReal, 1stDibs, Vestiaire, Chrono24, etc.). API integrations, scrape fallbacks, HTML/JSON parsing, retries, new platforms, clean `CanonicalListing` output. Feeds raw data to Agent A.
 
 ### C — Search & Ranking
-Owns query construction (text + image → search queries), precision/fuzzy expansion, relevance scoring (`scoreRelevance`), result filtering, and row bucketing (`buildRowBuckets`). Consumes enriched data from Agent A. Controls what users see and in what order.
+Owns query construction (text + image → search queries), precision/fuzzy expansion, relevance scoring (`scoreRelevance`), and result filtering. Consumes enriched data from Agent A. Controls what users see and in what order. (Frontend filter pills are owned by E; C feeds the result set.)
 
 ### D — Image Intelligence
 Owns the image-to-attributes pipeline: OpenAI Vision, Google Lens (SerpAPI), brand/model identification from visual matches, confidence merging. Produces `image_analysis` for Agents A and C. Uses Agent A's catalog to validate/correct visual identification.
 
 ### E — Frontend & UX
-Owns the React web app (`apps/web/`). Mobile layout, card rendering, carousels, bottom nav (Home / Queue / Profile), settings panel, search flow, loading states, error handling. Consumes API responses shaped by A and C.
+Owns the React web app (`apps/web/`). Mobile layout, card rendering, carousels, bottom nav (Home / Queue / Profile), settings panel, search flow, loading states, error handling. Consumes API responses shaped by A and C. When the browser extension (EX) is present, E requests extension-sourced results and merges them with API results into one list.
+
+### EX — Browser Extension (Bridge)
+Owns the **maisonDeux browser extension** (Chrome/Edge, optionally Firefox). Purpose: fetch search results from login-required, no-API sites (The RealReal, Vestiaire, Chrono24, 1stDibs, etc.) by running the search in the user’s browser where they are already logged in. The extension never sees or stores passwords; the server never logs in as the user. Responsibilities: extension manifest and permissions; content scripts to scrape result pages per site; background tab orchestration; message protocol with the web app (postMessage or backend); mapping scraped data to `CanonicalListing`-like JSON. Full product spec: `docs/website-spec.md` §9.
 
 ### F — Pricing Intelligence
 Owns retail price estimation (Google Shopping, eBay new-condition fallback), deal scoring (listing vs retail), future price trend work. Produces `estimated_retail_price_usd` and discount calculations.

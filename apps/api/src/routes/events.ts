@@ -129,12 +129,37 @@ export default async function eventsRoutes(app: FastifyInstance) {
         WHERE created_at > NOW() - INTERVAL '30 days'
       `) as any[];
 
+      // User tier funnel.
+      const userFunnel = await prisma.$queryRawUnsafe(`
+        SELECT tier, COUNT(*) as count
+        FROM users
+        GROUP BY tier
+        ORDER BY CASE tier WHEN 'guest' THEN 1 WHEN 'free' THEN 2 WHEN 'premium' THEN 3 WHEN 'admin' THEN 4 END
+      `) as any[];
+
+      // Weekly active users.
+      const wau = await prisma.$queryRawUnsafe(`
+        SELECT COUNT(DISTINCT user_id) as users
+        FROM user_events
+        WHERE created_at > NOW() - INTERVAL '7 days'
+      `) as any[];
+
+      // Monthly active users.
+      const mau = await prisma.$queryRawUnsafe(`
+        SELECT COUNT(DISTINCT user_id) as users
+        FROM user_events
+        WHERE created_at > NOW() - INTERVAL '30 days'
+      `) as any[];
+
       return reply.send({
         dau,
+        wau: wau[0]?.users || 0,
+        mau: mau[0]?.users || 0,
         breakdown,
         favStats: favStats[0] || {},
         topPlatforms,
         funnel: funnel[0] || {},
+        userFunnel,
       });
     } catch (err: any) {
       app.log.error(err, "Failed to read analytics");
