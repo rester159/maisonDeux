@@ -6,6 +6,7 @@
   "permissions": [
     "offscreen",
     "activeTab",
+    "tabs",
     "storage",
     "scripting",
     "declarativeNetRequest",

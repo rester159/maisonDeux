@@ -212,25 +212,32 @@
         enabledPlatforms,
       };
       console.log('Saving user settings:', data);
-      // Save to both sync and local for redundancy.
-      try {
-        chrome.storage.sync.set(data);
+      const btn = document.getElementById('save-btn');
+      btn.textContent = 'Saving...';
+      btn.style.background = '#666';
+
+      chrome.storage.sync.set(data, () => {
+        if (chrome.runtime.lastError) {
+          btn.textContent = 'Error!';
+          btn.style.background = '#c62828';
+          console.error('Save error:', chrome.runtime.lastError);
+          setTimeout(() => { btn.textContent = 'Save Settings'; btn.style.background = '#2c2218'; }, 3000);
+          return;
+        }
+        // Also save to local as backup.
         chrome.storage.local.set(data);
-        const btn = document.getElementById('save-btn');
         btn.textContent = '✓ Saved!';
         btn.style.background = '#2e7d32';
+        console.log('Settings saved successfully');
         setTimeout(() => { btn.textContent = 'Save Settings'; btn.style.background = '#2c2218'; }, 2000);
-      } catch (e) {
-        console.error('Save failed:', e);
-        alert('Save failed: ' + e.message);
-      }
+      });
     });
 
-    // Close button.
+    // Close button — close this tab.
     document.getElementById('close-btn').addEventListener('click', () => {
-      // Try closing the tab. Falls back to navigating back.
-      try { chrome.tabs.getCurrent((tab) => { if (tab) chrome.tabs.remove(tab.id); }); } catch(e) {}
-      setTimeout(() => { try { window.close(); } catch(e) { history.back(); } }, 100);
+      chrome.tabs.getCurrent((tab) => {
+        if (tab?.id) chrome.tabs.remove(tab.id);
+      });
     });
 
     // Dev settings link.
