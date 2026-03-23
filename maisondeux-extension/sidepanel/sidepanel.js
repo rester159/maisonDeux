@@ -419,9 +419,10 @@ function renderResults() {
     return true;
   });
 
-  // Step 0b: If source product has a brand, boost results that match it and demote others.
+  // Step 0b: If source product has a brand, demote non-matching results.
+  // Apply to allResults so dropdown population also excludes junk.
   if (srcBrand) {
-    filtered.forEach((r) => {
+    allResults.forEach((r) => {
       const rBrand = normalizeText(r.brand || '');
       const rTitle = normalizeText(r.title || '');
       const brandMatch = rBrand.includes(srcBrand) || rTitle.includes(srcBrand);
@@ -453,7 +454,8 @@ function renderResults() {
     if (!el) continue;
 
     // Get results filtered by all OTHER filters (not this one).
-    let pool = allResults.filter((r) => (r.relevanceScore ?? r.score ?? 1.0) >= minScore);
+    // Use the same brand-demoted scores so junk doesn't populate dropdowns.
+    let pool = allResults.filter((r) => (r.relevanceScore ?? r.score ?? 0) >= minScore);
     for (const otherKey of filterKeys) {
       if (otherKey === key) continue;
       const otherEl = filterEls[otherKey];
@@ -521,11 +523,11 @@ function renderResults() {
   $filterSection.classList.toggle('hidden', !anyFilterVisible);
 
   // Auto-set filters after dropdowns are populated.
-  if (!filtersAutoSet && currentProductAttrs && allResults.length > 0) {
-    // Check if dropdowns actually have options now.
-    const brandOpts = filterEls.brand ? [...filterEls.brand.options].filter(o => o.value) : [];
+  if (!filtersAutoSet && currentProductAttrs && filtered.length > 0) {
+    // Check if any dropdown has options.
+    const anyOpts = filterKeys.some(k => filterEls[k] && [...filterEls[k].options].some(o => o.value));
 
-    if (brandOpts.length > 0) {
+    if (anyOpts) {
       filtersAutoSet = true;
 
       function autoSet(el, targetVal) {
