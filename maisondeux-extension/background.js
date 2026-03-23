@@ -217,7 +217,7 @@ async function handleProductDetected(product, tab) {
       console.log('[MaisonDeux][bg] AI classification:', JSON.stringify(aiAttrs));
 
       // Auto-learn: save new terms discovered by AI.
-      learnFromAI(aiAttrs);
+      // learnFromAI(aiAttrs); // TODO: implement term learning
     } catch (err) {
       console.warn('[MaisonDeux][bg] AI classification failed:', err.message);
     }
@@ -252,7 +252,8 @@ async function handleProductDetected(product, tab) {
     // No brand — use first 5 meaningful words of title.
     query = title.split(/\s+/).filter(w => w.length > 2).slice(0, 5).join(' ');
   }
-  query = query.replace(/\s+/g, ' ').trim().slice(0, 80);
+  // Strip accents for better platform search compatibility.
+  query = query.normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, ' ').trim().slice(0, 80);
 
   console.log(`[MaisonDeux][bg] Query: "${query}"`);
 

@@ -142,7 +142,10 @@ chrome.runtime.onMessage.addListener((message) => {
     case 'DEAL_RESULTS': {
       const { listings, platform, complete } = message.payload;
       if (listings?.length) {
-        allResults.push(...listings);
+        // Deduplicate by link URL.
+        const existingUrls = new Set(allResults.map(r => r.link || r.url || ''));
+        const newItems = listings.filter(r => !existingUrls.has(r.link || r.url || ''));
+        allResults.push(...newItems);
       }
       if (platform) platformsSearched++;
       $scanStatus.textContent = complete
