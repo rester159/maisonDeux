@@ -256,77 +256,45 @@ function showProduct(product) {
   const $details = document.getElementById('product-details');
   $details.innerHTML = '';
 
-  // Build attribute pills. Use focused text (title + structured fields) for pills
-  // to avoid false positives from navigation/sidebar text on the page.
+  // ---- ATTRIBUTE EXTRACTION ----
+  // AI-classified products have clean fields. Otherwise minimal fallback.
   $productAttrs.innerHTML = '';
-  const focusedText = [
-    product.brand,
-    product.productName || product.title,
-    product.conditionText || product.condition,
-    product.categoryText || product.category,
-    product.color,
-    product.material,
-    product.hardware,
-    product.model,
-    // Only first 500 chars of description (the actual product details, not page chrome).
-    product.description ? product.description.slice(0, 500) : null,
-  ].filter(Boolean).join(' ');
-  const titleText = focusedText;
-  console.log('[MaisonDeux][panel] titleText length:', titleText.length, 'sample:', titleText.slice(0, 200));
+  const isAI = product._aiClassified === true;
+  console.log('[MaisonDeux][panel] Product source:', isAI ? 'AI-classified' : 'heuristic');
+  // ---- Extract attributes: trust product fields directly ----
+  // AI-classified products already have clean brand/model/color/etc.
+  // Content script + eBay Item Specifics also set these fields.
+  // No more keyword scanning for the source product.
 
-  const pills = [];
-
-  // Price pill.
-  // Price shown in details line, not as a pill.
-
-  // Color — prefer structured data, normalize to canonical English.
-  let rawColor = product.color || product.attrs?.colors?.[0] || [...scanTitle(titleText, FILTER_COLORS)][0] || null;
-  const colors = rawColor ? (COLOR_MAP[normalizeText(rawColor)] || rawColor) : null;
-  if (colors) pills.push({ label: colors, type: 'color' });
-
-  // Model — prefer structured data, skip brand-pattern names like "Gucci GG".
-  let model = product.model || [...scanTitle(titleText, FILTER_MODELS)][0] || null;
-  // Filter out brand-pattern names that aren't real models.
-  const nonModels = ['gucci gg', 'louis vuitton', 'chanel', 'hermes', 'dior', 'prada'];
-  if (model && nonModels.includes(normalizeText(model))) model = [...scanTitle(titleText, FILTER_MODELS)][0] || null;
-  if (model) pills.push({ label: model, type: 'model' });
-
-  // Material — prefer structured data from page.
-  const material = product.material || product.attrs?.materials?.[0] || [...scanTitle(titleText, FILTER_MATERIALS)][0] || null;
-  if (material) pills.push({ label: material, type: 'material' });
-
-  // Hardware — detect from structured data or description.
-  const hwRaw = product.hardware || [...scanTitle(titleText, FILTER_HARDWARE)][0] || null;
-  const hardware = hwRaw ? (hwRaw.toLowerCase().includes('gold') ? 'Gold' : hwRaw.toLowerCase().includes('silver') ? 'Silver' : hwRaw.toLowerCase().includes('palladium') ? 'Palladium' : hwRaw.toLowerCase().includes('ruthenium') ? 'Ruthenium' : hwRaw.toLowerCase().includes('rose') ? 'Rose Gold' : hwRaw) : null;
-
-  // Condition — normalize to canonical tier. Strip "Condition:" prefix if present.
-  let rawCondition = product.conditionText || product.condition || product.attrs?.conditions?.[0] || [...scanTitle(titleText, FILTER_CONDITIONS)][0] || null;
-  if (rawCondition) rawCondition = rawCondition.replace(/^condition\s*:\s*/i, '').trim() || rawCondition;
-  const condition = rawCondition ? (CONDITION_MAP[normalizeText(rawCondition)] || [...scanTitle(rawCondition, FILTER_CONDITIONS)][0] || rawCondition) : null;
-  if (condition) pills.push({ label: condition, type: 'condition' });
-
-  // Category.
-  const category = product.category || product.categoryText || product.attrs?.categories?.[0] || null;
-  if (category) pills.push({ label: category, type: 'category' });
-
-  // Use structured attributes first, normalize brand.
-  const brand = normalizeBrand(product.brand || [...scanTitle(titleText, FILTER_BRANDS)][0] || null);
+  const brand = normalizeBrand(product.brand) || null;
+  const model = product.model || null;
+  const color = product.color || null;
+  const material = product.material || null;
+  const hardware = product.hardware || null;
   const size = product.size || null;
+  const category = product.category || product.categoryText || null;
 
-  // Build ALL attributes as pills.
+  // Condition: clean up any label prefix.
+  let rawCond = product.condition || product.conditionText || null;
+  if (rawCond) rawCond = rawCond.replace(/^condition\s*:\s*/i, '').trim();
+  const condition = rawCond ? (CONDITION_MAP[normalizeText(rawCond)] || rawCond) : null;
+
+  console.log('[MaisonDeux][panel] Attrs:', { brand, model, color, material, hardware, condition, category });
+
+  // Build pills — only what we know.
   const allPills = [];
-  if (brand)              allPills.push({ label: brand, type: 'brand' });
-  if (model)              allPills.push({ label: model, type: 'model' });
-  if (colors)             allPills.push({ label: colors, type: 'color' });
-  if (material)           allPills.push({ label: material, type: 'material' });
-  if (size)               allPills.push({ label: size, type: 'size' });
-  if (hardware)           allPills.push({ label: hardware + ' HW', type: 'hardware' });
-  const currSym = (product.currency === 'EUR') ? '€' : (product.currency === 'GBP') ? '£' : (product.currency === 'CHF') ? 'CHF ' : '$';
-  // Price shown in details line, NOT as a pill.
-  if (condition)          allPills.push({ label: condition, type: 'condition' });
-  if (category)           allPills.push({ label: category, type: 'category' });
+  if (brand)    allPills.push({ label: brand, type: 'brand' });
+  if (model)    allPills.push({ label: model, type: 'model' });
+  if (color)    allPills.push({ label: color, type: 'color' });
+  if (material) allPills.push({ label: material, type: 'material' });
+  if (size)     allPills.push({ label: size, type: 'size' });
+  if (hardware) allPills.push({ label: hardware + ' HW', type: 'hardware' });
+  if (condition) allPills.push({ label: condition, type: 'condition' });
+  if (category) allPills.push({ label: category, type: 'category' });
 
-  // Details line: brand · price · store
+  // Details line: brand · price · store.
+  const $details = document.getElementById('product-details');
+  const currSym = (product.currency === 'EUR') ? '€' : (product.currency === 'GBP') ? '£' : (product.currency === 'CHF') ? 'CHF ' : '$';
   const detailParts = [];
   if (brand) detailParts.push(brand);
   if (priceVal > 0) detailParts.push(`<strong>${currSym}${priceVal.toLocaleString()}</strong>`);
@@ -416,13 +384,14 @@ function showProduct(product) {
   // Store detected attributes for auto-setting filters after results arrive.
   currentProductAttrs = {
     brand: (brand || '').toLowerCase(),
-    store: '', // Don't auto-set store — user wants to see other stores.
-    color: (colors || '').toLowerCase(),
+    store: (storeName || '').toLowerCase(),
+    color: (color || '').toLowerCase(),
     model: (model || '').toLowerCase(),
     material: (material || '').toLowerCase(),
     condition: (condition || '').toLowerCase(),
   };
   filtersAutoSet = false;
+  console.log('[MaisonDeux][panel] Auto-set attrs:', currentProductAttrs);
 }
 
 function showScanning() {
@@ -444,9 +413,21 @@ function renderResults() {
 
   $resultsSection.classList.remove('hidden');
 
+  // Step 0: Exclude the current listing from results.
+  const currentUrl = currentProduct?.url || '';
+  const currentTitle = (currentProduct?.productName || currentProduct?.title || '').toLowerCase();
+  let filtered = allResults.filter((r) => {
+    const rUrl = r.link || r.url || '';
+    const rTitle = (r.title || '').toLowerCase();
+    // Exclude exact URL match or very similar title on same platform.
+    if (currentUrl && rUrl === currentUrl) return false;
+    if (rTitle && currentTitle && rTitle === currentTitle && r.platform === currentProduct?.platform) return false;
+    return true;
+  });
+
   // Step 1: Apply relevance filter.
   const minScore = parseFloat(filterEls.relevance.value) || 0;
-  let filtered = allResults.filter((r) => (r.relevanceScore ?? r.score ?? 1.0) >= minScore);
+  filtered = filtered.filter((r) => (r.relevanceScore ?? r.score ?? 1.0) >= minScore);
 
   // Step 2: Apply each active filter.
   const filterKeys = ['brand', 'store', 'color', 'model', 'material', 'condition'];
@@ -548,10 +529,12 @@ function renderResults() {
     }
 
     autoSet(filterEls.brand, currentProductAttrs.brand);
+    // Don't auto-set store — user wants to see ALL stores.
     autoSet(filterEls.color, currentProductAttrs.color);
     autoSet(filterEls.model, currentProductAttrs.model);
     autoSet(filterEls.material, currentProductAttrs.material);
-    autoSet(filterEls.condition, currentProductAttrs.condition);
+    // Don't auto-set condition — user wants to see all conditions.
+    console.log('[MaisonDeux][panel] Filters auto-set for:', currentProductAttrs.brand, currentProductAttrs.model);
 
     // Re-filter with auto-set values.
     return renderResults();

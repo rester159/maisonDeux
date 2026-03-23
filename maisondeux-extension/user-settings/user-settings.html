@@ -135,26 +135,38 @@
       const $list = document.getElementById('mp-list');
       $list.innerHTML = '';
 
-      // Ask background to check cookies for each marketplace.
-      chrome.runtime.sendMessage({ type: 'CHECK_MARKETPLACE_ACCESS' }, (response) => {
-        const access = response?.access || {};
+      // Render all marketplaces. Check access by trying to detect cookies.
+      for (const mp of MARKETPLACES) {
+        // Try to check if user is logged in by looking for cookies.
+        const li = document.createElement('li');
+        li.className = 'mp-item';
 
-        for (const mp of MARKETPLACES) {
-          const hasAccess = access[mp.id] || false;
-          const li = document.createElement('li');
-          li.className = 'mp-item';
+        // Check cookie access asynchronously.
+        chrome.cookies?.get({ url: `https://${mp.domain}`, name: 'session' }, (cookie) => {
+          const hasAccess = !!cookie;
           li.innerHTML = `
             <img class="mp-icon" src="https://www.google.com/s2/favicons?domain=${mp.domain}&sz=20" alt="" />
             <span class="mp-name">${mp.name}</span>
             <div class="mp-status">
               <span class="mp-dot ${hasAccess ? 'green' : 'red'}"></span>
-              <span>${hasAccess ? 'Connected' : 'Not logged in'}</span>
+              <span>${hasAccess ? 'Logged in' : 'Not logged in'}</span>
             </div>
             ${!hasAccess ? `<a class="mp-login-link" href="${mp.loginUrl}" target="_blank">Log in</a>` : ''}
           `;
-          $list.appendChild(li);
-        }
-      });
+        });
+
+        // Render immediately with "checking..." then update.
+        li.innerHTML = `
+          <img class="mp-icon" src="https://www.google.com/s2/favicons?domain=${mp.domain}&sz=20" alt="" />
+          <span class="mp-name">${mp.name}</span>
+          <div class="mp-status">
+            <span class="mp-dot green"></span>
+            <span>Available</span>
+          </div>
+          <a class="mp-login-link" href="${mp.loginUrl}" target="_blank">Log in</a>
+        `;
+        $list.appendChild(li);
+      }
     }
 
     // Load saved preferences.
@@ -178,11 +190,16 @@
       }
     });
 
-    // Relevance slider.
-    document.getElementById('pref-relevance').addEventListener('input', (e) => {
-      const v = parseInt(e.target.value);
-      document.getElementById('pref-relevance-val').textContent = v === 0 ? 'Any' : v + '%';
-    });
+    // Relevance slider — update number on both input (drag) and change (release).
+    const relSlider = document.getElementById('pref-relevance');
+    const relVal = document.getElementById('pref-relevance-val');
+    function updateRelVal() {
+      const v = parseInt(relSlider.value);
+      relVal.textContent = v === 0 ? 'Any' : v + '%';
+    }
+    relSlider.addEventListener('input', updateRelVal);
+    relSlider.addEventListener('change', updateRelVal);
+    relSlider.addEventListener('mousemove', () => { if (relSlider.matches(':active')) updateRelVal(); });
 
     // Save.
     document.getElementById('save-btn').addEventListener('click', () => {
@@ -210,7 +227,11 @@
     });
 
     // Close button.
-    document.getElementById('close-btn').addEventListener('click', () => window.close());
+    document.getElementById('close-btn').addEventListener('click', () => {
+      // Try closing the tab. Falls back to navigating back.
+      try { chrome.tabs.getCurrent((tab) => { if (tab) chrome.tabs.remove(tab.id); }); } catch(e) {}
+      setTimeout(() => { try { window.close(); } catch(e) { history.back(); } }, 100);
+    });
 
     // Dev settings link.
     document.getElementById('dev-link').addEventListener('click', (e) => {
