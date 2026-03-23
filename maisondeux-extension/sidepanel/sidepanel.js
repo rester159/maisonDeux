@@ -512,48 +512,7 @@ function renderResults() {
   });
   $filterSection.classList.toggle('hidden', !anyFilterVisible);
 
-  // Auto-set filters after dropdowns are populated.
-  if (!filtersAutoSet && currentProductAttrs && filtered.length > 0) {
-    // Check if any dropdown has options.
-    const anyOpts = filterKeys.some(k => filterEls[k] && [...filterEls[k].options].some(o => o.value));
-
-    if (anyOpts) {
-      filtersAutoSet = true;
-
-      function autoSet(el, targetVal) {
-        if (!el || !targetVal) return false;
-        const target = normalizeText(targetVal);
-        for (const opt of el.options) {
-          if (!opt.value) continue;
-          const optNorm = normalizeText(opt.value);
-          const optTextNorm = normalizeText(opt.textContent);
-          // Match: exact, contains, or contained-by.
-          if (optNorm === target || optTextNorm === target || optNorm.includes(target) || target.includes(optNorm)) {
-            el.value = opt.value;
-            return true;
-          }
-        }
-        return false;
-      }
-
-      // Auto-set filters to match source product.
-
-      autoSet(filterEls.brand, currentProductAttrs.brand);
-      autoSet(filterEls.color, currentProductAttrs.color);
-      autoSet(filterEls.model, currentProductAttrs.model);
-      autoSet(filterEls.material, currentProductAttrs.material);
-
-      // Auto-set complete.
-      updateFilterStyles();
-
-      // Re-apply filters with the new auto-set values (don't recurse — just re-filter inline).
-      for (const key of filterKeys) {
-        const el = filterEls[key];
-        if (!el || !el.value) continue;
-        filtered = filtered.filter((r) => matchesFilter(r, key, el.value.toLowerCase()));
-      }
-    }
-  }
+  // Filters are user-controlled. No auto-set — show all relevant results.
 
   updateFilterStyles();
 
