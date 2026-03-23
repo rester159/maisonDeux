@@ -228,6 +228,12 @@ function updateView() {
 }
 
 function showProduct(product) {
+  // Don't reset if same product (avoids re-injection resetting filters).
+  const newKey = (product.url || '') + (product.productName || product.title || '');
+  const oldKey = currentProduct ? (currentProduct.url || '') + (currentProduct.productName || currentProduct.title || '') : '';
+  if (newKey === oldKey && currentProduct && filtersAutoSet) {
+    return; // Same product, filters already set — skip.
+  }
   currentProduct = product;
   $stateIdle.classList.add('hidden');
   $productCtx.classList.remove('hidden');

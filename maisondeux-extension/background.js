@@ -220,12 +220,26 @@ async function handleProductDetected(product, tab) {
   const platforms = [...ALL_PLATFORMS];
   broadcast({ type: 'SEARCH_STARTED', payload: { platformCount: platforms.length } });
 
-  // Build search query from classified attributes.
-  const query = [
-    classifiedProduct.brand,
-    classifiedProduct.model,
-    classifiedProduct.productName || classifiedProduct.title,
-  ].filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().slice(0, 120);
+  // Build search query — short and focused to get relevant results.
+  // Use brand + model if available, otherwise brand + key title words.
+  const brand = classifiedProduct.brand || '';
+  const model = classifiedProduct.model || '';
+  const title = classifiedProduct.productName || classifiedProduct.title || '';
+
+  let query;
+  if (brand && model) {
+    // Best case: "Hermès Picotin" or "Chanel Classic Flap"
+    query = `${brand} ${model}`;
+  } else if (brand) {
+    // Remove brand from title to avoid duplication, take first 3-4 meaningful words.
+    const titleWithoutBrand = title.replace(new RegExp(brand.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'gi'), '').trim();
+    const words = titleWithoutBrand.split(/\s+/).filter(w => w.length > 2).slice(0, 4);
+    query = `${brand} ${words.join(' ')}`;
+  } else {
+    // No brand — use first 5 meaningful words of title.
+    query = title.split(/\s+/).filter(w => w.length > 2).slice(0, 5).join(' ');
+  }
+  query = query.replace(/\s+/g, ' ').trim().slice(0, 80);
 
   console.log(`[MaisonDeux][bg] Query: "${query}"`);
 
