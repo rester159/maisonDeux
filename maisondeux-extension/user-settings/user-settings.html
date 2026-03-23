@@ -82,8 +82,8 @@
   <div class="pref-row">
     <span class="pref-label">Default min relevance</span>
     <div class="pref-range-row">
-      <input type="range" id="pref-relevance" min="0" max="100" value="0" />
-      <span id="pref-relevance-val">Any</span>
+      <input type="range" id="pref-relevance" min="0" max="100" value="50" />
+      <span id="pref-relevance-val">50%</span>
     </div>
   </div>
   <div class="pref-row">
@@ -195,16 +195,18 @@
         enabledPlatforms,
       };
       console.log('Saving user settings:', data);
-      chrome.storage.sync.set(data, () => {
-        if (chrome.runtime.lastError) {
-          console.error('Save failed:', chrome.runtime.lastError);
-          return;
-        }
+      // Save to both sync and local for redundancy.
+      try {
+        chrome.storage.sync.set(data);
+        chrome.storage.local.set(data);
         const btn = document.getElementById('save-btn');
         btn.textContent = '✓ Saved!';
         btn.style.background = '#2e7d32';
         setTimeout(() => { btn.textContent = 'Save Settings'; btn.style.background = '#2c2218'; }, 2000);
-      });
+      } catch (e) {
+        console.error('Save failed:', e);
+        alert('Save failed: ' + e.message);
+      }
     });
 
     // Close button.

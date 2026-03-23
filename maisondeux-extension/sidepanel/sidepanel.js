@@ -299,8 +299,9 @@ function showProduct(product) {
   const hwRaw = product.hardware || [...scanTitle(titleText, FILTER_HARDWARE)][0] || null;
   const hardware = hwRaw ? (hwRaw.toLowerCase().includes('gold') ? 'Gold' : hwRaw.toLowerCase().includes('silver') ? 'Silver' : hwRaw.toLowerCase().includes('palladium') ? 'Palladium' : hwRaw.toLowerCase().includes('ruthenium') ? 'Ruthenium' : hwRaw.toLowerCase().includes('rose') ? 'Rose Gold' : hwRaw) : null;
 
-  // Condition — normalize to canonical tier.
-  const rawCondition = product.conditionText || product.condition || product.attrs?.conditions?.[0] || [...scanTitle(titleText, FILTER_CONDITIONS)][0] || null;
+  // Condition — normalize to canonical tier. Strip "Condition:" prefix if present.
+  let rawCondition = product.conditionText || product.condition || product.attrs?.conditions?.[0] || [...scanTitle(titleText, FILTER_CONDITIONS)][0] || null;
+  if (rawCondition) rawCondition = rawCondition.replace(/^condition\s*:\s*/i, '').trim() || rawCondition;
   const condition = rawCondition ? (CONDITION_MAP[normalizeText(rawCondition)] || [...scanTitle(rawCondition, FILTER_CONDITIONS)][0] || rawCondition) : null;
   if (condition) pills.push({ label: condition, type: 'condition' });
 
