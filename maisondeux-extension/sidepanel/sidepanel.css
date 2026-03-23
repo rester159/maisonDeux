@@ -381,10 +381,10 @@ body {
   display: inline-flex; align-items: center; justify-content: center;
   width: 14px; height: 14px; font-size: 10px; line-height: 1;
 }
-.sp-dot-pending { color: #999; }
-.sp-dot-match { color: #2e7d32; } /* green — full match */
-.sp-dot-partial { color: #f57f17; } /* yellow — partial */
-.sp-dot-mismatch { color: #c62828; } /* red — bad match */
+.sp-dot-pending { color: #999 !important; }
+.sp-dot-match { color: #4caf50 !important; } /* green — full match */
+.sp-dot-partial { color: #ffeb3b !important; } /* yellow — partial */
+.sp-dot-mismatch { color: #ef5350 !important; } /* red — bad match */
 
 .sp-condition-toggle {
   background: none; border: 1px solid #d0c8be; border-radius: 3px;

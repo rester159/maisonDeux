@@ -378,8 +378,9 @@ function showProduct(product) {
         if (response?.report) {
           $srcReport.innerHTML = renderConditionReport(response.report);
           // Color-code the dot based on condition match.
-          const reportGrade = (response.report.overallGrade || '').toLowerCase();
-          const vendorCondition = (condition || '').toLowerCase();
+          const reportGrade = (response.report.overallGrade || '');
+          const vendorCondition = (condition || '');
+          console.log('[MaisonDeux][panel] Condition dot:', { reportGrade, vendorCondition });
           const dotClass = getConditionDotClass(reportGrade, vendorCondition);
           $srcDot.className = `sp-condition-dot ${dotClass}`;
           $srcDot.innerHTML = '&#9679;'; // filled circle
