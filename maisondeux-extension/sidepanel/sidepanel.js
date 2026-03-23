@@ -405,9 +405,11 @@ function renderResults() {
 
   $resultsSection.classList.remove('hidden');
 
-  // Step 0: Exclude the current listing from results.
+  // Step 0: Exclude the current listing and low-quality results.
   const currentUrl = currentProduct?.url || '';
   const currentTitle = (currentProduct?.productName || currentProduct?.title || '').toLowerCase();
+  const srcBrand = normalizeText(currentProduct?.brand || '');
+
   let filtered = allResults.filter((r) => {
     const rUrl = r.link || r.url || '';
     const rTitle = (r.title || '').toLowerCase();
@@ -417,9 +419,23 @@ function renderResults() {
     return true;
   });
 
-  // Step 1: Apply relevance filter.
-  const minScore = parseFloat(filterEls.relevance.value) || 0;
-  filtered = filtered.filter((r) => (r.relevanceScore ?? r.score ?? 1.0) >= minScore);
+  // Step 0b: If source product has a brand, boost results that match it and demote others.
+  if (srcBrand) {
+    filtered.forEach((r) => {
+      const rBrand = normalizeText(r.brand || '');
+      const rTitle = normalizeText(r.title || '');
+      const brandMatch = rBrand.includes(srcBrand) || rTitle.includes(srcBrand);
+      if (!brandMatch) {
+        // Halve the score for non-matching brands.
+        r.relevanceScore = (r.relevanceScore || r.score || 0.5) * 0.4;
+        r.score = r.relevanceScore;
+      }
+    });
+  }
+
+  // Step 1: Apply minimum relevance (default 30% to filter junk).
+  const minScore = parseFloat(filterEls.relevance.value) || 0.3;
+  filtered = filtered.filter((r) => (r.relevanceScore ?? r.score ?? 0) >= minScore);
 
   // Step 2: Apply each active filter.
   const filterKeys = ['brand', 'store', 'color', 'model', 'material', 'condition'];
