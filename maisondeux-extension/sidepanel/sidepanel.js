@@ -559,10 +559,14 @@ function renderResults() {
       autoSet(filterEls.material, currentProductAttrs.material);
 
       console.log('[MaisonDeux][panel] After auto-set — brand:', filterEls.brand?.value, 'model:', filterEls.model?.value);
-
-      // Re-filter with auto-set values.
       updateFilterStyles();
-      return renderResults();
+
+      // Re-apply filters with the new auto-set values (don't recurse — just re-filter inline).
+      for (const key of filterKeys) {
+        const el = filterEls[key];
+        if (!el || !el.value) continue;
+        filtered = filtered.filter((r) => matchesFilter(r, key, el.value.toLowerCase()));
+      }
     }
   }
 
