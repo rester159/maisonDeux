@@ -518,13 +518,21 @@ function renderResults() {
       }
     }
 
+    // Debug: log what options are available.
+    for (const key of filterKeys) {
+      const el = filterEls[key];
+      if (el) {
+        const opts = [...el.options].map(o => o.value).filter(v => v);
+        if (opts.length) console.log(`[MaisonDeux][panel] Filter ${key} options:`, opts.join(', '));
+      }
+    }
+    console.log('[MaisonDeux][panel] Trying to auto-set:', JSON.stringify(currentProductAttrs));
+
     autoSet(filterEls.brand, currentProductAttrs.brand);
-    // Don't auto-set store — user wants to see ALL stores.
     autoSet(filterEls.color, currentProductAttrs.color);
     autoSet(filterEls.model, currentProductAttrs.model);
     autoSet(filterEls.material, currentProductAttrs.material);
-    // Don't auto-set condition — user wants to see all conditions.
-    console.log('[MaisonDeux][panel] Filters auto-set for:', currentProductAttrs.brand, currentProductAttrs.model);
+    console.log('[MaisonDeux][panel] After auto-set — brand:', filterEls.brand?.value, 'model:', filterEls.model?.value);
 
     // Re-filter with auto-set values.
     return renderResults();
