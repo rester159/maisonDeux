@@ -52,6 +52,18 @@ export function LoginPage({ onLogin }: { onLogin: () => void }) {
         <p style={styles.footer}>
           Don't have an account? <a href="#" style={styles.link}>Sign up</a>
         </p>
+
+        {/* GOD MODE — remove before production */}
+        <button
+          type="button"
+          onClick={() => {
+            localStorage.setItem("maisondeux_tier", "admin");
+            onLogin();
+          }}
+          style={styles.godBtn}
+        >
+          ⚡
+        </button>
       </div>
     </div>
   );
@@ -72,6 +84,7 @@ const styles: Record<string, React.CSSProperties> = {
     background: "#fff",
     borderRadius: 12,
     boxShadow: "0 4px 24px rgba(0,0,0,0.08)",
+    position: "relative" as const,
   },
   logoRow: {
     display: "flex",
@@ -149,5 +162,19 @@ const styles: Record<string, React.CSSProperties> = {
   link: {
     color: "#2c2218",
     fontWeight: 600,
+  },
+  godBtn: {
+    position: "absolute" as const,
+    bottom: 12,
+    right: 12,
+    width: 28,
+    height: 28,
+    background: "transparent",
+    border: "1px solid #e8e4de",
+    borderRadius: "50%",
+    fontSize: 12,
+    cursor: "pointer",
+    opacity: 0.3,
+    transition: "opacity 0.2s",
   },
 };
