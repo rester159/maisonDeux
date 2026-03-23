@@ -272,6 +272,9 @@
     // Detect image.
     const imageUrl = document.querySelector('meta[property="og:image"]')?.content
       || document.querySelector('img[src*="product"], img[src*="item"], img[class*="product"]')?.src
+      || document.querySelector('img[src*="vestiairecollective.com"]')?.src
+      || document.querySelector('img[src*="therealreal.com"]')?.src
+      || document.querySelector('picture img')?.src
       || document.querySelector('main img, article img')?.src
       || '';
 
@@ -304,6 +307,9 @@
       '[class*="ProductImage"] img', '[class*="product-image"] img', '[class*="gallery"] img',
       // Vestiaire
       '[class*="productGallery"] img', '[data-testid*="image"] img',
+      'img[src*="vestiairecollective.com"]', 'img[src*="images.vestiaire"]',
+      '[class*="Gallery"] img', '[class*="slider"] img', '[class*="Slider"] img',
+      'picture source[srcset*="vestiaire"]', 'picture img',
       // Poshmark
       '[class*="listing-image"] img', '[class*="carousel"] img',
       // Grailed

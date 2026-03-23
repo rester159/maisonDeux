@@ -14,7 +14,6 @@ export function DashboardLayout({ onLogout }: { onLogout: () => void }) {
         <nav style={styles.nav}>
           <SidebarLink to="/settings" icon="&#9881;" label="Settings" />
           <SidebarLink to="/analytics" icon="&#128202;" label="Analytics" />
-          <SidebarLink to="/compare" icon="&#9638;" label="Compare" />
         </nav>
 
         <div style={styles.sidebarBottom}>

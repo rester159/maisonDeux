@@ -23,21 +23,22 @@ function AppRouter() {
     setIsLoggedIn(false);
   };
 
-  if (!isLoggedIn) {
-    return <LoginPage onLogin={handleLogin} />;
-  }
-
   return (
     <Routes>
-      <Route path="/compare" element={<DashboardLayout onLogout={handleLogout} />}>
-        <Route index element={<ComparePage />} />
-      </Route>
-      <Route element={<DashboardLayout onLogout={handleLogout} />}>
-        <Route path="/" element={<Navigate to="/settings" replace />} />
-        <Route path="/settings" element={<SettingsPage />} />
-        <Route path="/analytics" element={<AnalyticsPage />} />
-        <Route path="*" element={<Navigate to="/settings" replace />} />
-      </Route>
+      {/* Public pages — no login required */}
+      <Route path="/compare" element={<ComparePage />} />
+
+      {/* Dashboard — login required */}
+      {!isLoggedIn ? (
+        <Route path="*" element={<LoginPage onLogin={handleLogin} />} />
+      ) : (
+        <Route element={<DashboardLayout onLogout={handleLogout} />}>
+          <Route path="/" element={<Navigate to="/settings" replace />} />
+          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/analytics" element={<AnalyticsPage />} />
+          <Route path="*" element={<Navigate to="/settings" replace />} />
+        </Route>
+      )}
     </Routes>
   );
 }

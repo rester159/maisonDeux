@@ -305,12 +305,52 @@ async function searchPlatform(platform, query, creds) {
   switch (platform) {
     case 'ebay':         return searchEbay(query, creds.ebay);
     case 'therealreal':  return searchViaFetch(platform, query, creds.therealreal);
-    case 'poshmark':     return searchViaFetch(platform, query, creds.poshmark);
+    case 'poshmark':     return searchPoshmarkApi(query);
     case 'vestiaire':    return searchViaFetch(platform, query, creds.vestiaire);
     case 'grailed':      return searchViaFetch(platform, query, creds.grailed);
     case 'mercari':      return searchViaFetch(platform, query, creds.mercari);
     case 'shopgoodwill': return searchShopGoodwill(query, creds.shopgoodwill);
     default:             return [];
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Poshmark API
+// ---------------------------------------------------------------------------
+
+async function searchPoshmarkApi(query) {
+  try {
+    const request = JSON.stringify({
+      filters: { department: 'All' },
+      query_and_facet_filters: { query },
+      count: 20,
+    });
+    const url = `https://poshmark.com/vm-rest/posts?request=${encodeURIComponent(request)}`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      console.log(`[MaisonDeux][bg] poshmark API: ${res.status}`);
+      return [];
+    }
+    const data = await res.json();
+    const posts = data.data || [];
+    console.log(`[MaisonDeux][bg] poshmark API: ${posts.length} results`);
+
+    return posts.slice(0, 20).map((p) => ({
+      title: p.title || '',
+      price: p.price ? `$${p.price}` : (p.price_amount?.val ? `$${p.price_amount.val}` : ''),
+      priceValue: parseFloat(p.price || p.price_amount?.val || 0),
+      currency: 'USD',
+      img: p.cover_shot?.url_small || p.picture_url || '',
+      link: `https://poshmark.com/listing/${p.title?.replace(/\s+/g, '-')}-${p.id}`,
+      brand: p.brand || '',
+      color: (p.colors || [])[0]?.name || '',
+      condition: p.condition === 'nwt' ? 'New' : p.condition === 'ug' ? 'Good' : '',
+      platform: 'poshmark',
+      source: 'poshmark-api',
+    }));
+  } catch (e) {
+    console.warn(`[MaisonDeux][bg] poshmark API error:`, e.message);
+    return [];
   }
 }
 
