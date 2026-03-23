@@ -116,7 +116,9 @@ $toggle.addEventListener('change', () => {
 
 // ---- Settings ----
 $settingsBtn.addEventListener('click', () => {
-  chrome.tabs.create({ url: chrome.runtime.getURL('user-settings/user-settings.html') });
+  // Open settings on the web dashboard (maisondeux.vip).
+  // Falls back to Railway URL if domain isn't set up yet.
+  chrome.tabs.create({ url: 'https://maisondeux.vip/settings' });
 });
 
 // ---- Message listeners ----
