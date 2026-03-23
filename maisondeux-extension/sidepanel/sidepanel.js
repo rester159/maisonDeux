@@ -420,16 +420,20 @@ function renderResults() {
   });
 
   // Step 0b: If source product has a brand, demote non-matching results.
-  // Apply to allResults so dropdown population also excludes junk.
+  // Use _originalScore to avoid compounding on re-renders.
   if (srcBrand) {
     allResults.forEach((r) => {
+      // Store original score once.
+      if (r._originalScore == null) r._originalScore = r.relevanceScore ?? r.score ?? 0.5;
       const rBrand = normalizeText(r.brand || '');
       const rTitle = normalizeText(r.title || '');
       const brandMatch = rBrand.includes(srcBrand) || rTitle.includes(srcBrand);
       if (!brandMatch) {
-        // Halve the score for non-matching brands.
-        r.relevanceScore = (r.relevanceScore || r.score || 0.5) * 0.4;
+        r.relevanceScore = r._originalScore * 0.4;
         r.score = r.relevanceScore;
+      } else {
+        r.relevanceScore = r._originalScore;
+        r.score = r._originalScore;
       }
     });
   }
