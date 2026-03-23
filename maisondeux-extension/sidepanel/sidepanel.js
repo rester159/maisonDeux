@@ -550,7 +550,8 @@ function renderResults() {
         return false;
       }
 
-      console.log('[MaisonDeux][panel] Dropdown options available:', brandOpts.map(o => o.value).join(', '));
+      const bOpts = filterEls.brand ? [...filterEls.brand.options].filter(o => o.value) : [];
+      console.log('[MaisonDeux][panel] Dropdown options available:', bOpts.map(o => o.value).join(', '));
       console.log('[MaisonDeux][panel] Auto-setting from:', JSON.stringify(currentProductAttrs));
 
       autoSet(filterEls.brand, currentProductAttrs.brand);
