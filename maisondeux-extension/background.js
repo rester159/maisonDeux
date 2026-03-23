@@ -14,6 +14,7 @@
 
 const tabProducts = new Map();
 const tabResults = new Map(); // Store search results per tab
+const tabSearching = new Map(); // Prevent duplicate searches per tab
 let isActive = true;
 
 const ALL_PLATFORMS = ['therealreal', 'ebay', 'poshmark', 'vestiaire', 'grailed', 'mercari', 'shopgoodwill'];
@@ -199,6 +200,10 @@ async function handleProductDetected(product, tab) {
   if (!isActive || !tab?.id) return;
 
   const tabId = tab.id;
+
+  // Prevent duplicate searches for the same tab.
+  if (tabSearching.get(tabId)) return;
+  tabSearching.set(tabId, true);
   console.log(`[MaisonDeux][bg] Product: ${product.brand || ''} ${product.productName || product.title || ''}`);
 
   // Load credentials.
@@ -231,10 +236,11 @@ async function handleProductDetected(product, tab) {
   let classifiedProduct = product;
 
   // Build search query — short and focused to get relevant results.
-  // Use brand + model if available, otherwise brand + key title words.
-  const brand = classifiedProduct.brand || '';
-  const model = classifiedProduct.model || '';
-  const title = classifiedProduct.productName || classifiedProduct.title || '';
+  const brand = (product.brand || '').trim();
+  const model = (product.model || '').trim();
+  // Fix concatenated titles like "Iriza leather heelsChristian Louboutin" by inserting spaces at camelCase boundaries.
+  const rawTitle = product.productName || product.title || '';
+  const title = rawTitle.replace(/([a-z])([A-Z])/g, '$1 $2').replace(/\s+/g, ' ').trim();
 
   let query;
   if (brand && model) {
@@ -320,6 +326,9 @@ async function handleProductDetected(product, tab) {
   } else {
     chrome.action.setBadgeText({ text: '' });
   }
+
+  // Allow new search on next navigation.
+  tabSearching.delete(tabId);
 }
 
 // ---------------------------------------------------------------------------
@@ -1153,13 +1162,8 @@ Rules:
 async function classifyProductAI(product, apiKey, provider, model) {
   const content = [];
 
-  // Include image if available.
-  if (product.imageUrl) {
-    content.push({
-      type: 'image',
-      source: { type: 'url', url: product.imageUrl },
-    });
-  }
+  // Skip image for classification — text is sufficient for brand/model/color extraction.
+  // Images from CDNs (Vestiaire, TheRealReal) are often blocked by OpenAI.
 
   content.push({
     type: 'text',
