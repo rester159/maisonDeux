@@ -256,7 +256,6 @@ function showProduct(product) {
   // AI-classified products have clean fields. Otherwise minimal fallback.
   $productAttrs.innerHTML = '';
   const isAI = product._aiClassified === true;
-  console.log('[MaisonDeux][panel] Product source:', isAI ? 'AI-classified' : 'heuristic');
   // ---- Extract attributes: trust product fields directly ----
   // AI-classified products already have clean brand/model/color/etc.
   // Content script + eBay Item Specifics also set these fields.
@@ -275,7 +274,6 @@ function showProduct(product) {
   if (rawCond) rawCond = rawCond.replace(/^condition\s*:\s*/i, '').trim();
   const condition = rawCond ? (CONDITION_MAP[normalizeText(rawCond)] || rawCond) : null;
 
-  console.log('[MaisonDeux][panel] Attrs:', { brand, model, color, material, hardware, condition, category });
 
   // Build pills — only what we know.
   const allPills = [];
@@ -350,7 +348,6 @@ function showProduct(product) {
           // Color-code the dot based on condition match.
           const reportGrade = (response.report.overallGrade || '');
           const vendorCondition = (condition || '');
-          console.log('[MaisonDeux][panel] Condition dot:', { reportGrade, vendorCondition });
           const dotClass = getConditionDotClass(reportGrade, vendorCondition);
           $srcDot.className = `sp-condition-dot ${dotClass}`;
           $srcDot.innerHTML = '&#9679;'; // filled circle
@@ -386,7 +383,6 @@ function showProduct(product) {
     condition: (condition || '').toLowerCase(),
   };
   filtersAutoSet = false;
-  console.log('[MaisonDeux][panel] Auto-set attrs:', currentProductAttrs);
 }
 
 function showScanning() {
@@ -422,28 +418,9 @@ function renderResults() {
     return true;
   });
 
-  // Step 0b: If source product has a brand, demote non-matching results.
-  // Use _originalScore to avoid compounding on re-renders.
-  if (srcBrand) {
-    allResults.forEach((r) => {
-      // Store original score once.
-      if (r._originalScore == null) r._originalScore = r.relevanceScore ?? r.score ?? 0.5;
-      const rBrand = normalizeText(r.brand || '');
-      const rTitle = normalizeText(r.title || '');
-      const brandMatch = rBrand.includes(srcBrand) || rTitle.includes(srcBrand);
-      if (!brandMatch) {
-        r.relevanceScore = r._originalScore * 0.4;
-        r.score = r.relevanceScore;
-      } else {
-        r.relevanceScore = r._originalScore;
-        r.score = r._originalScore;
-      }
-    });
-  }
-
-  // Step 1: Apply minimum relevance.
+  // Step 1: Apply minimum relevance (floor 0.15 to hide junk).
   const rawMin = parseFloat(filterEls.relevance.value);
-  const minScore = isNaN(rawMin) ? 0 : rawMin;
+  const minScore = Math.max(isNaN(rawMin) ? 0 : rawMin, 0.15);
   filtered = filtered.filter((r) => (r.relevanceScore ?? r.score ?? 0) >= minScore);
 
   // Step 2: Apply each active filter.
@@ -490,6 +467,11 @@ function renderResults() {
           const b = normalizeBrand(r[key]) || normalizeBrand(r.brand);
           if (b) available.add(b);
           if (keywordList) scanTitle(r.title || '', keywordList).forEach((v) => available.add(normalizeBrand(v) || v));
+          // Always include source product brand so auto-set has a value.
+          if (currentProductAttrs?.brand) {
+            const srcBrandDisplay = normalizeBrand(currentProductAttrs.brand);
+            if (srcBrandDisplay) available.add(srcBrandDisplay);
+          }
         } else {
           if (r[key]) available.add(r[key]);
           // Scan both title AND description for attributes.
@@ -554,16 +536,14 @@ function renderResults() {
         return false;
       }
 
-      const bOpts = filterEls.brand ? [...filterEls.brand.options].filter(o => o.value) : [];
-      console.log('[MaisonDeux][panel] Dropdown options available:', bOpts.map(o => o.value).join(', '));
-      console.log('[MaisonDeux][panel] Auto-setting from:', JSON.stringify(currentProductAttrs));
+      // Auto-set filters to match source product.
 
       autoSet(filterEls.brand, currentProductAttrs.brand);
       autoSet(filterEls.color, currentProductAttrs.color);
       autoSet(filterEls.model, currentProductAttrs.model);
       autoSet(filterEls.material, currentProductAttrs.material);
 
-      console.log('[MaisonDeux][panel] After auto-set — brand:', filterEls.brand?.value, 'model:', filterEls.model?.value);
+      // Auto-set complete.
       updateFilterStyles();
 
       // Re-apply filters with the new auto-set values (don't recurse — just re-filter inline).
@@ -607,13 +587,6 @@ function renderResults() {
     const p = r.platform || r.source || 'unknown';
     if (!groups[p]) groups[p] = [];
     groups[p].push(r);
-  }
-
-  console.log(`[MaisonDeux][panel] RENDER: ${filtered.length} filtered, ${allResults.length} total, groups: ${Object.keys(groups).length}`);
-  if (filtered.length > 0) console.log('[MaisonDeux][panel] First:', filtered[0].title?.slice(0,40), 'score:', filtered[0].relevanceScore);
-  if (filtered.length === 0 && allResults.length > 0) {
-    const s = allResults[0];
-    console.warn('[MaisonDeux][panel] ALL FILTERED OUT. Sample:', s?.title?.slice(0,40), 'score:', s?.relevanceScore, '_orig:', s?._originalScore, 'brand:', s?.brand, 'minScore:', minScore);
   }
 
   $resultsSummary.textContent = searchComplete

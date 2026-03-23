@@ -207,31 +207,28 @@ async function handleProductDetected(product, tab) {
   const hasAI = !!aiKey;
   console.log(`[MaisonDeux][bg] AI: ${hasAI} (${creds.aiProvider}), eBay: ${!!creds.ebay?.appId}`);
 
-  // Step 1: Classify source product (AI if available, else heuristic).
-  let classifiedProduct = product;
-  if (hasAI) {
-    try {
-      console.log('[MaisonDeux][bg] Classifying source product with AI...');
-      const aiAttrs = await classifyProductAI(product, aiKey, creds.aiProvider, creds.aiModel);
-      classifiedProduct = { ...product, ...aiAttrs, _aiClassified: true };
-      console.log('[MaisonDeux][bg] AI classification:', JSON.stringify(aiAttrs));
+  // Store product immediately (before AI) so side panel shows it fast.
+  tabProducts.set(tabId, product);
+  broadcast({ type: 'PRODUCT_DETECTED', payload: product });
 
-      // Auto-learn: save new terms discovered by AI.
-      // learnFromAI(aiAttrs); // TODO: implement term learning
-    } catch (err) {
-      console.warn('[MaisonDeux][bg] AI classification failed:', err.message);
-    }
-  }
-
-  // Store product for this tab.
-  tabProducts.set(tabId, classifiedProduct);
-
-  // Notify side panel.
-  broadcast({ type: 'PRODUCT_DETECTED', payload: classifiedProduct });
-
-  // Search ALL platforms including the current one.
+  // Start search immediately — don't wait for AI classification.
   const platforms = [...ALL_PLATFORMS];
   broadcast({ type: 'SEARCH_STARTED', payload: { platformCount: platforms.length } });
+
+  // Run AI classification in background (non-blocking). Updates pills when done.
+  if (hasAI) {
+    classifyProductAI(product, aiKey, creds.aiProvider, creds.aiModel)
+      .then((aiAttrs) => {
+        const enriched = { ...product, ...aiAttrs, _aiClassified: true };
+        tabProducts.set(tabId, enriched);
+        broadcast({ type: 'PRODUCT_DETECTED', payload: enriched });
+        console.log('[MaisonDeux][bg] AI classification done:', aiAttrs.brand, aiAttrs.model, aiAttrs.color);
+      })
+      .catch((err) => console.warn('[MaisonDeux][bg] AI classification failed:', err.message));
+  }
+
+  // Use content-script data for search query (available immediately).
+  let classifiedProduct = product;
 
   // Build search query — short and focused to get relevant results.
   // Use brand + model if available, otherwise brand + key title words.
