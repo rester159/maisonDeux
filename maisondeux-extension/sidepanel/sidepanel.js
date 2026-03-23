@@ -85,18 +85,32 @@ function updateApiStatus() {
 }
 updateApiStatus();
 
-// Ask background for current product and any existing results.
-chrome.runtime.sendMessage({ type: 'GET_CURRENT_PRODUCT' }, (response) => {
-  console.log('[MaisonDeux][panel] GET_CURRENT_PRODUCT response:', response);
-  if (response?.product) {
-    showProduct(response.product);
-    if (response.results && response.results.length) {
-      allResults = response.results;
-      searchComplete = response.searchComplete || false;
-      console.log(`[MaisonDeux][panel] Loaded ${allResults.length} cached results`);
-      renderResults();
-    }
+// On panel open: re-inject content script to pick up current page, then ask for data.
+chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+  const tabId = tabs[0]?.id;
+  if (tabId) {
+    // Re-execute content script so it extracts fresh product data.
+    chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content-script.js'],
+    }).catch(() => {});
   }
+
+  // Small delay to let the content script run and send PRODUCT_DETECTED.
+  setTimeout(() => {
+    chrome.runtime.sendMessage({ type: 'GET_CURRENT_PRODUCT' }, (response) => {
+      console.log('[MaisonDeux][panel] GET_CURRENT_PRODUCT response:', response);
+      if (response?.product) {
+        showProduct(response.product);
+        if (response.results && response.results.length) {
+          allResults = response.results;
+          searchComplete = response.searchComplete || false;
+          console.log(`[MaisonDeux][panel] Loaded ${allResults.length} cached results`);
+          renderResults();
+        }
+      }
+    });
+  }, 500);
 });
 
 // ---- Toggle on/off ----

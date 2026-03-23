@@ -123,13 +123,30 @@ body {
 }
 .sp-product-details strong { font-weight: 700; color: #2c2218; }
 
-.sp-chips { display: flex; flex-wrap: wrap; gap: 3px; }
+.sp-chips {
+  display: flex;
+  gap: 4px;
+  overflow-x: auto;
+  white-space: nowrap;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding-bottom: 2px;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  mask-image: linear-gradient(to right, black 90%, transparent 100%);
+  -webkit-mask-image: linear-gradient(to right, black 90%, transparent 100%);
+}
+.sp-chips::-webkit-scrollbar { display: none; }
+.sp-chips:hover { mask-image: none; -webkit-mask-image: none; }
+.sp-chips:active { cursor: grabbing; }
 
 .sp-chip {
   display: inline-block;
   padding: 2px 7px; border-radius: 10px;
   font-size: 10px; font-weight: 600;
   background: #f0ebe5; color: #6b5b4e;
+  flex-shrink: 0; white-space: nowrap;
 }
 
 .sp-chip-brand    { background: #2c2218; color: #fff; }
