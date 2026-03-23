@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MaisonDeux — Deep Comparison</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'DM Sans', sans-serif; background: #fafaf8; color: #1a1a1a; padding: 24px; }
+    h1 { font-size: 22px; font-weight: 700; color: #2c2218; margin-bottom: 4px; }
+    .subtitle { font-size: 13px; color: #888; margin-bottom: 20px; }
+    .grid-wrapper { overflow-x: auto; }
+    table { border-collapse: collapse; width: 100%; min-width: 600px; }
+    thead th {
+      position: sticky; top: 0; background: #2c2218; color: #f7f3ef;
+      padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 600;
+      text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;
+    }
+    tbody td {
+      padding: 8px 12px; border-bottom: 1px solid #e8e4de; font-size: 12px;
+      vertical-align: middle;
+    }
+    tbody tr:hover { background: #f5f2ee; }
+    .cell-img { width: 50px; height: 50px; border-radius: 4px; object-fit: cover; }
+    .cell-brand { font-weight: 700; color: #2c2218; }
+    .cell-price { font-weight: 700; font-size: 13px; }
+    .cell-savings { font-size: 11px; font-weight: 600; }
+    .cell-savings.cheaper { color: #2e7d32; }
+    .cell-savings.pricier { color: #c62828; }
+    .chip { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin: 1px; }
+    .chip-color { background: #e3f2fd; color: #1565c0; }
+    .chip-material { background: #fff3e0; color: #e65100; }
+    .chip-condition { background: #e8f5e9; color: #2e7d32; }
+    .chip-store { background: #f0ebe5; color: #6b5b4e; }
+    .grade { font-weight: 700; }
+    .grade-good { color: #2e7d32; }
+    .grade-ok { color: #f57f17; }
+    .grade-bad { color: #c62828; }
+    .grade-none { color: #ccc; }
+    .link { color: #1565c0; text-decoration: none; }
+    .link:hover { text-decoration: underline; }
+    .empty { text-align: center; padding: 48px; color: #999; font-size: 14px; }
+    .header-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .btn { background: #2c2218; color: #fff; border: none; border-radius: 4px; padding: 6px 14px; font-size: 12px; cursor: pointer; font-weight: 600; }
+    .btn:hover { background: #5d4a3a; }
+  </style>
+</head>
+<body>
+  <div class="header-bar">
+    <div>
+      <h1>MaisonDeux — Deep Comparison</h1>
+      <p class="subtitle">Side-by-side comparison of all saved favorites</p>
+    </div>
+    <button class="btn" onclick="window.print()">&#128424; Print</button>
+  </div>
+  <div class="grid-wrapper">
+    <table id="compare-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Title</th>
+          <th>Brand</th>
+          <th>Model</th>
+          <th>Price</th>
+          <th>vs. Lowest</th>
+          <th>Store</th>
+          <th>Color</th>
+          <th>Material</th>
+          <th>Condition</th>
+          <th>AI Grade</th>
+          <th>Link</th>
+        </tr>
+      </thead>
+      <tbody id="compare-body"></tbody>
+    </table>
+  </div>
+  <div id="empty-msg" class="empty hidden">No favorites to compare. Save items from the side panel first.</div>
+
+  <script>
+    const STORE_NAMES = {
+      ebay:'eBay', therealreal:'TheRealReal', poshmark:'Poshmark',
+      vestiaire:'Vestiaire', grailed:'Grailed', mercari:'Mercari',
+      shopgoodwill:'ShopGoodwill', 'google-shopping':'Google Shopping',
+    };
+    const esc = (s) => { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; };
+
+    chrome.storage.local.get(['maisondeux_compare_data', 'maisondeux_favorites'], (data) => {
+      let items = [];
+      // Try compare data first, fall back to favorites.
+      try { items = JSON.parse(data.maisondeux_compare_data || '[]'); } catch(e) {}
+      if (!items.length && data.maisondeux_favorites) {
+        items = data.maisondeux_favorites;
+      }
+      console.log('[MaisonDeux][compare] Loaded', items.length, 'items');
+
+      if (!items.length) {
+        document.getElementById('empty-msg').classList.remove('hidden');
+        document.getElementById('compare-table').classList.add('hidden');
+        return;
+      }
+
+      // Find lowest price.
+      const prices = items.map(i => parseFloat(String(i.price||'').replace(/[^0-9.]/g,''))||0).filter(p=>p>0);
+      const lowestPrice = prices.length ? Math.min(...prices) : 0;
+
+      const tbody = document.getElementById('compare-body');
+
+      for (const item of items) {
+        const price = parseFloat(String(item.price||'').replace(/[^0-9.]/g,''))||0;
+        const delta = price > 0 && lowestPrice > 0 ? price - lowestPrice : 0;
+        const store = STORE_NAMES[item.platform] || item.platform || '';
+        const cr = item._conditionReport;
+        const aiGrade = cr?.overallGrade || '';
+        const gradeClass = ['New','Excellent'].includes(aiGrade) ? 'grade-good' : ['Very Good','Good'].includes(aiGrade) ? 'grade-ok' : aiGrade ? 'grade-bad' : 'grade-none';
+
+        let savingsHtml = '';
+        if (delta === 0 && price > 0) savingsHtml = '<span class="cell-savings cheaper">★ Lowest</span>';
+        else if (delta > 0) savingsHtml = `<span class="cell-savings pricier">+$${Math.round(delta).toLocaleString()}</span>`;
+
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+          <td>${item.img ? `<img class="cell-img" src="${esc(item.img)}" />` : ''}</td>
+          <td>${esc(item.title)}</td>
+          <td class="cell-brand">${esc(item.brand)}</td>
+          <td>${esc(item.model)}</td>
+          <td class="cell-price">${price > 0 ? '$'+price.toLocaleString() : '—'}</td>
+          <td>${savingsHtml}</td>
+          <td><span class="chip chip-store">${esc(store)}</span></td>
+          <td>${item.color ? `<span class="chip chip-color">${esc(item.color)}</span>` : '—'}</td>
+          <td>${item.material ? `<span class="chip chip-material">${esc(item.material)}</span>` : '—'}</td>
+          <td>${item.condition ? `<span class="chip chip-condition">${esc(item.condition)}</span>` : '—'}</td>
+          <td><span class="grade ${gradeClass}">${aiGrade || '—'}</span></td>
+          <td>${item.link ? `<a class="link" href="${esc(item.link)}" target="_blank">View →</a>` : ''}</td>
+        `;
+        tbody.appendChild(tr);
+      }
+    });
+  </script>
+</body>
+</html>

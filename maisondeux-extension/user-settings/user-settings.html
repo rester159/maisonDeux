@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MaisonDeux — Settings</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&display=swap');
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'DM Sans', sans-serif; background: #fafaf8; color: #1a1a1a; padding: 16px; max-width: 420px; }
+    h1 { font-size: 18px; font-weight: 700; color: #2c2218; margin-bottom: 4px; }
+    h2 { font-size: 13px; font-weight: 700; color: #2c2218; margin: 16px 0 6px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .subtitle { font-size: 11px; color: #999; margin-bottom: 16px; }
+    .header { display: flex; align-items: center; justify-content: space-between; }
+    .close-btn { background: none; border: none; font-size: 22px; cursor: pointer; color: #999; }
+    .close-btn:hover { color: #c62828; }
+
+    /* Marketplace status */
+    .mp-list { list-style: none; }
+    .mp-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; border-bottom: 1px solid #f0ebe5;
+    }
+    .mp-icon { width: 20px; height: 20px; border-radius: 3px; }
+    .mp-name { flex: 1; font-size: 13px; font-weight: 500; }
+    .mp-status { display: flex; align-items: center; gap: 4px; font-size: 11px; }
+    .mp-dot { width: 8px; height: 8px; border-radius: 50%; }
+    .mp-dot.green { background: #4caf50; }
+    .mp-dot.red { background: #c62828; }
+    .mp-login-link { font-size: 10px; color: #1565c0; text-decoration: none; }
+    .mp-login-link:hover { text-decoration: underline; }
+
+    /* Preferences */
+    .pref-row {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 8px 0; border-bottom: 1px solid #f0ebe5;
+    }
+    .pref-label { font-size: 12px; color: #4a3728; }
+    .pref-select {
+      padding: 4px 8px; border: 1px solid #d0c8be; border-radius: 4px;
+      font-size: 11px; font-family: inherit; background: #fff;
+    }
+    .pref-range-row { display: flex; align-items: center; gap: 8px; }
+    .pref-range-row input[type=range] { flex: 1; }
+    .pref-range-row span { font-size: 11px; font-weight: 600; color: #2c2218; min-width: 30px; text-align: right; }
+
+    .save-btn {
+      width: 100%; margin-top: 16px; padding: 10px;
+      background: #2c2218; color: #fff; border: none; border-radius: 6px;
+      font-size: 13px; font-weight: 600; cursor: pointer;
+    }
+    .save-btn:hover { background: #5d4a3a; }
+    .status { text-align: center; font-size: 11px; color: #2e7d32; margin-top: 8px; display: none; }
+    .status.show { display: block; }
+
+    .dev-link { display: block; text-align: center; margin-top: 12px; font-size: 10px; color: #999; }
+    .dev-link a { color: #6b5b4e; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <div>
+      <h1>MaisonDeux Settings</h1>
+      <p class="subtitle">Customize your deal-finding experience</p>
+    </div>
+    <button class="close-btn" id="close-btn">&times;</button>
+  </div>
+
+  <h2>Marketplace Status</h2>
+  <ul class="mp-list" id="mp-list"></ul>
+
+  <h2>Preferences</h2>
+  <div class="pref-row">
+    <span class="pref-label">Currency</span>
+    <select class="pref-select" id="pref-currency">
+      <option value="USD">USD ($)</option>
+      <option value="EUR">EUR (&euro;)</option>
+      <option value="GBP">GBP (&pound;)</option>
+      <option value="CHF">CHF</option>
+    </select>
+  </div>
+  <div class="pref-row">
+    <span class="pref-label">Default min relevance</span>
+    <div class="pref-range-row">
+      <input type="range" id="pref-relevance" min="0" max="100" value="0" />
+      <span id="pref-relevance-val">Any</span>
+    </div>
+  </div>
+  <div class="pref-row">
+    <span class="pref-label">Auto-set brand filter</span>
+    <select class="pref-select" id="pref-auto-brand">
+      <option value="true">Yes (Recommended)</option>
+      <option value="false">No</option>
+    </select>
+  </div>
+  <div class="pref-row">
+    <span class="pref-label">Max results per platform</span>
+    <select class="pref-select" id="pref-max-results">
+      <option value="10">10</option>
+      <option value="20" selected>20</option>
+      <option value="50">50</option>
+    </select>
+  </div>
+
+  <h2>Enabled Platforms</h2>
+  <p style="font-size:11px;color:#888;margin-bottom:8px">Uncheck platforms you don't want to search.</p>
+  <div id="platform-toggles"></div>
+
+  <button class="save-btn" id="save-btn">Save Settings</button>
+  <p class="status" id="status-msg">Settings saved!</p>
+
+  <p class="dev-link">Developer? <a href="#" id="dev-link">Open API Settings</a></p>
+
+  <script>
+    const MARKETPLACES = [
+      { id: 'therealreal', name: 'The RealReal', domain: 'www.therealreal.com', loginUrl: 'https://www.therealreal.com/users/sign_in', signupUrl: 'https://www.therealreal.com/users/sign_up' },
+      { id: 'ebay', name: 'eBay', domain: 'www.ebay.com', loginUrl: 'https://signin.ebay.com/ws/eBayISAPI.dll?SignIn', signupUrl: 'https://signup.ebay.com/pa/crte' },
+      { id: 'poshmark', name: 'Poshmark', domain: 'poshmark.com', loginUrl: 'https://poshmark.com/login', signupUrl: 'https://poshmark.com/signup' },
+      { id: 'vestiaire', name: 'Vestiaire Collective', domain: 'www.vestiairecollective.com', loginUrl: 'https://www.vestiairecollective.com/authentication/', signupUrl: 'https://www.vestiairecollective.com/authentication/' },
+      { id: 'grailed', name: 'Grailed', domain: 'www.grailed.com', loginUrl: 'https://www.grailed.com/users/sign_in', signupUrl: 'https://www.grailed.com/users/sign_up' },
+      { id: 'mercari', name: 'Mercari', domain: 'www.mercari.com', loginUrl: 'https://www.mercari.com/login/', signupUrl: 'https://www.mercari.com/signup/' },
+      { id: 'shopgoodwill', name: 'ShopGoodwill', domain: 'shopgoodwill.com', loginUrl: 'https://shopgoodwill.com/signin', signupUrl: 'https://shopgoodwill.com/signup' },
+    ];
+
+    // Check marketplace accessibility by trying to fetch a small page.
+    async function checkMarketplaceAccess(mp) {
+      try {
+        const resp = await fetch(`https://${mp.domain}`, { method: 'HEAD', mode: 'no-cors' });
+        return true; // no-cors always "succeeds" — real check needs cookies
+      } catch { return false; }
+    }
+
+    // For now, check if user has cookies for the domain via background script.
+    function renderMarketplaces() {
+      const $list = document.getElementById('mp-list');
+      $list.innerHTML = '';
+
+      // Ask background to check cookies for each marketplace.
+      chrome.runtime.sendMessage({ type: 'CHECK_MARKETPLACE_ACCESS' }, (response) => {
+        const access = response?.access || {};
+
+        for (const mp of MARKETPLACES) {
+          const hasAccess = access[mp.id] || false;
+          const li = document.createElement('li');
+          li.className = 'mp-item';
+          li.innerHTML = `
+            <img class="mp-icon" src="https://www.google.com/s2/favicons?domain=${mp.domain}&sz=20" alt="" />
+            <span class="mp-name">${mp.name}</span>
+            <div class="mp-status">
+              <span class="mp-dot ${hasAccess ? 'green' : 'red'}"></span>
+              <span>${hasAccess ? 'Connected' : 'Not logged in'}</span>
+            </div>
+            ${!hasAccess ? `<a class="mp-login-link" href="${mp.loginUrl}" target="_blank">Log in</a>` : ''}
+          `;
+          $list.appendChild(li);
+        }
+      });
+    }
+
+    // Load saved preferences.
+    chrome.storage.sync.get(null, (data) => {
+      if (data.pref_currency) document.getElementById('pref-currency').value = data.pref_currency;
+      if (data.pref_relevance != null) {
+        document.getElementById('pref-relevance').value = data.pref_relevance;
+        document.getElementById('pref-relevance-val').textContent = data.pref_relevance === 0 ? 'Any' : data.pref_relevance + '%';
+      }
+      if (data.pref_auto_brand != null) document.getElementById('pref-auto-brand').value = String(data.pref_auto_brand);
+      if (data.pref_max_results) document.getElementById('pref-max-results').value = data.pref_max_results;
+
+      // Platform toggles.
+      const enabled = data.enabledPlatforms || MARKETPLACES.map(m => m.id);
+      const $toggles = document.getElementById('platform-toggles');
+      for (const mp of MARKETPLACES) {
+        const label = document.createElement('label');
+        label.style.cssText = 'display:flex;align-items:center;gap:6px;padding:4px 0;font-size:12px;';
+        label.innerHTML = `<input type="checkbox" name="platform-toggle" value="${mp.id}" ${enabled.includes(mp.id) ? 'checked' : ''} /> ${mp.name}`;
+        $toggles.appendChild(label);
+      }
+    });
+
+    // Relevance slider.
+    document.getElementById('pref-relevance').addEventListener('input', (e) => {
+      const v = parseInt(e.target.value);
+      document.getElementById('pref-relevance-val').textContent = v === 0 ? 'Any' : v + '%';
+    });
+
+    // Save.
+    document.getElementById('save-btn').addEventListener('click', () => {
+      const enabledPlatforms = [...document.querySelectorAll('input[name="platform-toggle"]:checked')].map(el => el.value);
+      chrome.storage.sync.set({
+        pref_currency: document.getElementById('pref-currency').value,
+        pref_relevance: parseInt(document.getElementById('pref-relevance').value),
+        pref_auto_brand: document.getElementById('pref-auto-brand').value === 'true',
+        pref_max_results: parseInt(document.getElementById('pref-max-results').value),
+        enabledPlatforms,
+      }, () => {
+        const $msg = document.getElementById('status-msg');
+        $msg.classList.add('show');
+        setTimeout(() => $msg.classList.remove('show'), 2000);
+      });
+    });
+
+    // Close button.
+    document.getElementById('close-btn').addEventListener('click', () => window.close());
+
+    // Dev settings link.
+    document.getElementById('dev-link').addEventListener('click', (e) => {
+      e.preventDefault();
+      chrome.runtime.openOptionsPage();
+    });
+
+    renderMarketplaces();
+  </script>
+</body>
+</html>

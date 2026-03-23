@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "MaisonDeux",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Second-hand luxury deal finder — compare prices across resale platforms.",
   "permissions": [
     "offscreen",

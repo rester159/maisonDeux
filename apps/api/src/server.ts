@@ -1301,6 +1301,17 @@ if (process.env.DEV_DASHBOARD_ENABLED === "true") {
   });
 }
 
+// Extension settings persistence (always enabled).
+import("./routes/extension-settings").then((mod) => {
+  app.register(mod.default);
+  app.log.info("Extension settings routes enabled at /api/extension-settings/*");
+});
+
+import("./routes/events").then((mod) => {
+  app.register(mod.default);
+  app.log.info("Events routes enabled at /api/events/*");
+});
+
 const port = Number(process.env.PORT ?? 3000);
 ensureMarketplaceConfigs()
   .then(() => app.listen({ host: "0.0.0.0", port }))

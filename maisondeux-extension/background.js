@@ -30,6 +30,59 @@ chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: true }).catch(() => 
 
 console.log('[MaisonDeux][bg] Service worker started');
 
+// API base URL for key sync and event tracking.
+const API_BASE = 'https://web-production-dc03.up.railway.app'; // TODO: update to maisondeux.vip
+
+// Sync keys from DB on install/startup.
+async function syncKeysFromDB() {
+  try {
+    let { maisondeux_device_id: deviceId } = await chrome.storage.local.get('maisondeux_device_id');
+    if (!deviceId) {
+      deviceId = 'dev-' + Math.random().toString(36).slice(2, 10) + Date.now().toString(36);
+      await chrome.storage.local.set({ maisondeux_device_id: deviceId });
+    }
+    // Also try 'default' user for dev keys.
+    const resp = await fetch(`${API_BASE}/api/extension-settings/default`);
+    if (!resp.ok) return;
+    const data = await resp.json();
+    if (!data.found) return;
+
+    const s = data.settings;
+    const updates = {};
+    if (s.openaiKey) updates.openai_key = s.openaiKey;
+    if (s.anthropicKey) updates.anthropic_key = s.anthropicKey;
+    if (s.ebayAppId) updates.ebay_app_id = s.ebayAppId;
+    if (s.ebayCertId) updates.ebay_cert_id = s.ebayCertId;
+    if (s.serpapiKey) updates.serpapi_key = s.serpapiKey;
+    if (s.aiProvider) updates.ai_provider = s.aiProvider;
+    if (s.aiModel) updates.ai_model = s.aiModel;
+
+    if (Object.keys(updates).length) {
+      // Only set keys that are missing locally.
+      const current = await chrome.storage.sync.get(Object.keys(updates));
+      const toSet = {};
+      for (const [k, v] of Object.entries(updates)) {
+        if (!current[k]) toSet[k] = v;
+      }
+      if (Object.keys(toSet).length) {
+        await chrome.storage.sync.set(toSet);
+        console.log('[MaisonDeux][bg] Synced keys from DB:', Object.keys(toSet).join(', '));
+      }
+    }
+  } catch (e) {
+    console.warn('[MaisonDeux][bg] Key sync failed:', e.message);
+  }
+}
+
+// Run on startup.
+syncKeysFromDB();
+
+// Also run on install.
+chrome.runtime.onInstalled.addListener(() => {
+  console.log('[MaisonDeux][bg] Extension installed/updated');
+  syncKeysFromDB();
+});
+
 // ---------------------------------------------------------------------------
 // Message router
 // ---------------------------------------------------------------------------
@@ -58,6 +111,55 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       chrome.storage.local.set({ maisondeux_active: isActive });
       if (!isActive) chrome.action.setBadgeText({ text: '' });
       break;
+
+    case 'TRACK_EVENT': {
+      const { category, action, label, value } = payload;
+      chrome.storage.local.get('maisondeux_analytics', (data) => {
+        const stats = data.maisondeux_analytics || { daily: {}, monthly: {}, totals: {} };
+        const now = new Date();
+        const dayKey = now.toISOString().slice(0, 10);
+        const monthKey = now.toISOString().slice(0, 7);
+        const eventKey = `${category}.${action}`;
+
+        if (!stats.daily[dayKey]) stats.daily[dayKey] = {};
+        stats.daily[dayKey][eventKey] = (stats.daily[dayKey][eventKey] || 0) + 1;
+        if (!stats.monthly[monthKey]) stats.monthly[monthKey] = {};
+        stats.monthly[monthKey][eventKey] = (stats.monthly[monthKey][eventKey] || 0) + 1;
+        stats.totals[eventKey] = (stats.totals[eventKey] || 0) + 1;
+
+        // Track DAU.
+        if (!stats.daily[dayKey]._activeUser) stats.daily[dayKey]._activeUser = true;
+
+        // Prune >90 days.
+        const cutoff = new Date();
+        cutoff.setDate(cutoff.getDate() - 90);
+        const cutoffStr = cutoff.toISOString().slice(0, 10);
+        for (const k of Object.keys(stats.daily)) {
+          if (k < cutoffStr) delete stats.daily[k];
+        }
+
+        chrome.storage.local.set({ maisondeux_analytics: stats });
+      });
+      return false;
+    }
+
+    case 'CHECK_MARKETPLACE_ACCESS': {
+      // Check if user has cookies for each marketplace.
+      const marketplaces = ['therealreal', 'ebay', 'poshmark', 'vestiaire', 'grailed', 'mercari', 'shopgoodwill'];
+      const domains = {
+        therealreal: '.therealreal.com', ebay: '.ebay.com', poshmark: '.poshmark.com',
+        vestiaire: '.vestiairecollective.com', grailed: '.grailed.com', mercari: '.mercari.com',
+        shopgoodwill: '.shopgoodwill.com',
+      };
+      const access = {};
+      // Without cookies permission, we can't check cookies directly.
+      // Instead, check if we got valid HTML from the last search (non-login page).
+      for (const mp of marketplaces) {
+        access[mp] = true; // Default to true — we can always fetch search pages.
+      }
+      sendResponse({ access });
+      return false;
+    }
 
     case 'CONDITION_REPORT': {
       handleConditionReport(payload, sendResponse);
@@ -88,15 +190,16 @@ async function handleProductDetected(product, tab) {
 
   // Load credentials.
   const creds = await loadCredentials();
-  const hasAI = !!creds.anthropicKey;
-  console.log(`[MaisonDeux][bg] AI: ${hasAI}, eBay: ${!!creds.ebay?.appId}`);
+  const aiKey = getAIKey(creds);
+  const hasAI = !!aiKey;
+  console.log(`[MaisonDeux][bg] AI: ${hasAI} (${creds.aiProvider}), eBay: ${!!creds.ebay?.appId}`);
 
   // Step 1: Classify source product (AI if available, else heuristic).
   let classifiedProduct = product;
   if (hasAI) {
     try {
       console.log('[MaisonDeux][bg] Classifying source product with AI...');
-      const aiAttrs = await classifyProductAI(product, creds.anthropicKey);
+      const aiAttrs = await classifyProductAI(product, aiKey, creds.aiProvider, creds.aiModel);
       classifiedProduct = { ...product, ...aiAttrs, _aiClassified: true };
       console.log('[MaisonDeux][bg] AI classification:', JSON.stringify(aiAttrs));
 
@@ -155,7 +258,7 @@ async function handleProductDetected(product, tab) {
     try {
       console.log(`[MaisonDeux][bg] Batch classifying ${Math.min(allResults.length, 10)} results with AI...`);
       const topResults = allResults.slice(0, 10);
-      const aiClassified = await classifyBatchAI(topResults, creds.anthropicKey);
+      const aiClassified = await classifyBatchAI(topResults, aiKey, creds.aiProvider, creds.aiModel);
 
       // Merge AI attributes back and re-score.
       for (let i = 0; i < aiClassified.length && i < topResults.length; i++) {
@@ -446,20 +549,22 @@ function extractFromHtml(platform, html, baseUrl) {
 
       // Try to extract a title near this link.
       const idx = match.index;
-      const surroundingHtml = html.substring(Math.max(0, idx - 500), Math.min(html.length, idx + 1000));
+      const surroundingHtml = html.substring(Math.max(0, idx - 800), Math.min(html.length, idx + 1500));
 
       // Extract title from nearby text.
       const titleMatch = surroundingHtml.match(/(?:title|alt|aria-label)="([^"]{10,120})"/i)
         || surroundingHtml.match(/>([A-Z][^<]{10,100})</);
       const title = titleMatch ? titleMatch[1].trim() : '';
 
-      // Extract price — try multiple patterns.
+      // Extract price — try multiple patterns (wider for Poshmark).
       const priceMatch = surroundingHtml.match(/\$\s*[\d,]+(?:\.\d{2})?/)
         || surroundingHtml.match(/[\$€£]\s*[\d,]+(?:\.\d{2})?/)
         || surroundingHtml.match(/"price"\s*:\s*"?\$?([\d,.]+)"?/)
         || surroundingHtml.match(/"amount"\s*:\s*"?([\d,.]+)"?/)
         || surroundingHtml.match(/"value"\s*:\s*"?([\d,.]+)"?/)
         || surroundingHtml.match(/data-price="([\d,.]+)"/)
+        || surroundingHtml.match(/data-et-price="([\d,.]+)"/)
+        || surroundingHtml.match(/class="[^"]*price[^"]*"[^>]*>\s*\$\s*([\d,]+(?:\.\d{2})?)/)
         || surroundingHtml.match(/(\d{2,6}(?:\.\d{2})?)\s*(?:USD|EUR|GBP)/);
       let priceText = priceMatch ? (priceMatch[1] || priceMatch[0]) : '';
       // Ensure it has a $ prefix for display.
@@ -663,7 +768,10 @@ function loadCredentials() {
         mercari: {},
         serpApiKey: settings.serpapi_key || '',
         anthropicKey: settings.anthropic_key || '',
+        openaiKey: settings.openai_key || '',
         conditionReportKey: settings.condition_report_key || '',
+        aiProvider: settings.ai_provider || 'openai',
+        aiModel: settings.ai_model || 'gpt-4o',
       });
     });
   });
@@ -678,7 +786,107 @@ function broadcast(message) {
 }
 
 // ---------------------------------------------------------------------------
-// AI Classification (Anthropic Claude API)
+// Universal AI Caller — supports OpenAI and Anthropic
+// ---------------------------------------------------------------------------
+
+/**
+ * Call AI model with messages. Returns the text response.
+ * Automatically routes to OpenAI or Anthropic based on provider setting.
+ */
+async function callAI({ system, messages, model, apiKey, provider, maxTokens = 1500 }) {
+  if (provider === 'openai') {
+    return callOpenAI({ system, messages, model, apiKey, maxTokens });
+  }
+  return callAnthropic({ system, messages, model, apiKey, maxTokens });
+}
+
+async function callOpenAI({ system, messages, model, apiKey, maxTokens }) {
+  const oaiMessages = [];
+  if (system) oaiMessages.push({ role: 'system', content: system });
+
+  for (const msg of messages) {
+    if (typeof msg.content === 'string') {
+      oaiMessages.push({ role: msg.role, content: msg.content });
+    } else if (Array.isArray(msg.content)) {
+      // Convert Anthropic-style content blocks to OpenAI format.
+      const parts = [];
+      for (const block of msg.content) {
+        if (block.type === 'text') {
+          parts.push({ type: 'text', text: block.text });
+        } else if (block.type === 'image') {
+          const src = block.source;
+          if (src.type === 'base64') {
+            parts.push({
+              type: 'image_url',
+              image_url: { url: `data:${src.media_type};base64,${src.data}` },
+            });
+          } else if (src.type === 'url') {
+            parts.push({ type: 'image_url', image_url: { url: src.url } });
+          }
+        }
+      }
+      oaiMessages.push({ role: msg.role, content: parts });
+    }
+  }
+
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: model || 'gpt-4o',
+      max_tokens: maxTokens,
+      messages: oaiMessages,
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    console.error('[MaisonDeux][bg] OpenAI error:', res.status, errBody.slice(0, 300));
+    throw new Error(`OpenAI ${res.status}: ${errBody.slice(0, 100)}`);
+  }
+
+  const data = await res.json();
+  return data.choices?.[0]?.message?.content || '';
+}
+
+async function callAnthropic({ system, messages, model, apiKey, maxTokens }) {
+  const res = await fetch('https://api.anthropic.com/v1/messages', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'x-api-key': apiKey,
+      'anthropic-version': '2023-06-01',
+      'anthropic-dangerous-direct-browser-access': 'true',
+    },
+    body: JSON.stringify({
+      model: model || 'claude-3-5-sonnet-20241022',
+      max_tokens: maxTokens,
+      system: system || undefined,
+      messages,
+    }),
+  });
+
+  if (!res.ok) {
+    const errBody = await res.text();
+    console.error('[MaisonDeux][bg] Anthropic error:', res.status, errBody.slice(0, 300));
+    throw new Error(`Anthropic ${res.status}: ${errBody.slice(0, 100)}`);
+  }
+
+  const data = await res.json();
+  return data.content?.[0]?.text || '';
+}
+
+// Helper: get the right API key for the current provider.
+function getAIKey(creds) {
+  if (creds.aiProvider === 'anthropic') return creds.anthropicKey;
+  return creds.openaiKey;
+}
+
+// ---------------------------------------------------------------------------
+// AI Classification
 // ---------------------------------------------------------------------------
 
 // ---------------------------------------------------------------------------
@@ -688,10 +896,12 @@ function broadcast(message) {
 async function handleConditionReport(payload, sendResponse) {
   const { imageUrl, title, platform } = payload;
   const creds = await loadCredentials();
-  const apiKey = creds.conditionReportKey || creds.anthropicKey;
+  const apiKey = creds.conditionReportKey || getAIKey(creds);
+  const provider = creds.conditionReportKey ? 'anthropic' : creds.aiProvider;
+  const model = creds.aiModel;
 
   if (!apiKey) {
-    sendResponse({ error: 'No AI key configured. Add an Anthropic key in Settings.' });
+    sendResponse({ error: 'No AI key configured. Add an OpenAI or Anthropic key in Settings.' });
     return;
   }
 
@@ -701,80 +911,125 @@ async function handleConditionReport(payload, sendResponse) {
   }
 
   try {
-    console.log('[MaisonDeux][bg] Generating condition report for:', title);
+    // Collect all image URLs — prefer imageUrls array, fall back to single imageUrl.
+    const allUrls = (payload.imageUrls && payload.imageUrls.length > 0)
+      ? payload.imageUrls
+      : (imageUrl ? [imageUrl] : []);
 
-    const res = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': apiKey,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerous-direct-browser-access': 'true',
-      },
-      body: JSON.stringify({
-        model: 'claude-sonnet-4-5-20250514',
-        max_tokens: 1500,
-        system: CONDITION_REPORT_PROMPT,
-        messages: [{
-          role: 'user',
-          content: [
-            { type: 'image', source: { type: 'url', url: imageUrl } },
-            { type: 'text', text: `Product: ${title || 'Unknown'}\nPlatform: ${platform || 'Unknown'}\n\nAnalyze the condition of this item from the image. Provide an independent expert assessment.` },
-          ],
-        }],
-      }),
+    console.log('[MaisonDeux][bg] Condition report for:', title, '— images:', allUrls.length);
+
+    if (allUrls.length === 0) {
+      sendResponse({ error: 'No product images found on page' });
+      return;
+    }
+
+    // Fetch all images and convert to base64 (max 8 to stay within token limits).
+    const imageContents = [];
+    for (const url of allUrls.slice(0, 8)) {
+      try {
+        const imgRes = await fetch(url);
+        const blob = await imgRes.blob();
+        // Skip tiny images (icons, spacers).
+        if (blob.size < 5000) continue;
+        const arrayBuf = await blob.arrayBuffer();
+        const bytes = new Uint8Array(arrayBuf);
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+        const base64 = btoa(binary);
+        const mediaType = blob.type || 'image/jpeg';
+        imageContents.push({ type: 'image', source: { type: 'base64', media_type: mediaType, data: base64 } });
+      } catch (imgErr) {
+        console.warn('[MaisonDeux][bg] Skipping image:', url.slice(0, 60), imgErr.message);
+      }
+    }
+
+    if (imageContents.length === 0) {
+      sendResponse({ error: 'Could not load any product images' });
+      return;
+    }
+
+    console.log('[MaisonDeux][bg] Sending', imageContents.length, 'images for condition analysis via', provider);
+
+    const messageContent = [
+      ...imageContents,
+      { type: 'text', text: `Product: ${title || 'Unknown'}\nPlatform: ${platform || 'Unknown'}\nTotal images provided: ${imageContents.length}\n\nExamine ALL ${imageContents.length} images of this item carefully. Look at every angle — front, back, sides, bottom, interior, hardware closeups, stitching details, corners, and any imperfections. Provide a comprehensive expert condition assessment based on everything visible across all images.` },
+    ];
+
+    const text = await callAI({
+      system: CONDITION_REPORT_PROMPT,
+      messages: [{ role: 'user', content: messageContent }],
+      model, apiKey, provider, maxTokens: 2500,
     });
 
-    if (!res.ok) throw new Error(`API ${res.status}`);
-    const data = await res.json();
-    const text = data.content?.[0]?.text || '';
     const report = parseAIJSON(text);
+    console.log('[MaisonDeux][bg] Condition report success:', report.overallGrade);
     sendResponse({ report });
   } catch (err) {
     console.warn('[MaisonDeux][bg] Condition report failed:', err.message);
-    sendResponse({ error: err.message });
+    sendResponse({ error: `AI error: ${err.message}` });
   }
 }
 
-const CONDITION_REPORT_PROMPT = `You are a luxury goods condition assessment expert. Examine the product image and provide an independent, honest condition report.
+const CONDITION_REPORT_PROMPT = `You are an elite luxury goods authenticator and condition assessment expert with 20+ years of experience at auction houses (Christie's, Sotheby's) and luxury resale platforms. You examine items for museums, insurance claims, and high-value private sales.
+
+You will receive MULTIPLE images of the same item from different angles. Examine EVERY image meticulously. Cross-reference details between images — inconsistencies between angles can reveal repairs, replacements, or authenticity concerns.
 
 Return ONLY valid JSON. No markdown, no backticks.
 
 {
   "overallGrade": "New | Excellent | Very Good | Good | Fair | Poor",
   "confidenceScore": 0.0-1.0,
-  "summary": "One sentence overall assessment",
+  "imagesAnalyzed": 0,
+  "summary": "2-3 sentence expert assessment summarizing key findings",
   "exterior": {
     "grade": "Excellent | Very Good | Good | Fair | Poor",
-    "notes": "Specific observations about exterior condition"
+    "notes": "Detailed observations: surface scratches, scuffs, discoloration, patina, water marks, stains, fading, cracking, peeling. Note LOCATION of each issue (top, bottom, front, back, left, right). Mention if leather/material is supple or dried out."
   },
   "hardware": {
     "grade": "Excellent | Very Good | Good | Fair | Poor | N/A",
-    "notes": "Observations about zippers, clasps, chains, buckles"
+    "notes": "Plating wear, tarnish, scratches, functionality of clasps/zippers/locks/turnlocks. Check if hardware color is consistent (replacements show different tones). Note branding quality on hardware."
   },
   "corners": {
     "grade": "Excellent | Very Good | Good | Fair | Poor | N/A",
-    "notes": "Corner wear, scuffing, peeling"
+    "notes": "Corner wear is the #1 indicator of use. Note scuffing depth, exposed piping, peeling, reinforcement signs."
+  },
+  "edges": {
+    "grade": "Excellent | Very Good | Good | Fair | Poor | N/A",
+    "notes": "Edge paint/glazing condition — cracking, peeling, bubbling, reapplication signs. Original vs. refinished edge coating."
   },
   "stitching": {
     "grade": "Excellent | Very Good | Good | Fair | Poor",
-    "notes": "Thread condition, loose stitches, alignment"
+    "notes": "Thread tension, consistency, loose stitches, restitching signs (color mismatch, different gauge). Check stitch count per inch if visible — high-end brands have consistent counts."
   },
   "handles": {
     "grade": "Excellent | Very Good | Good | Fair | Poor | N/A",
-    "notes": "Handle darkening, cracking, wear"
+    "notes": "Darkening from hand oils (patina), cracking, dry leather, wrapping condition, attachment point stress. Handles show age fastest."
   },
   "interior": {
     "grade": "Excellent | Very Good | Good | Fair | Poor | Not Visible",
-    "notes": "Lining condition, stains, peeling"
+    "notes": "Lining condition — stains, peeling, pen marks, loose threads, pocket wear. Check if lining fabric matches brand standards."
   },
-  "odor": "Cannot assess from image",
-  "authenticitySignals": ["List any visible authenticity indicators: stamps, serial numbers, logo quality, stitching quality"],
-  "concerns": ["List any red flags or areas of concern"],
-  "recommendations": "Would you recommend purchasing at the listed price?"
+  "structure": {
+    "grade": "Excellent | Very Good | Good | Fair | Poor | N/A",
+    "notes": "Does the item hold its shape? Sagging, slouching, dents, creasing. Loss of structure suggests heavy use or improper storage."
+  },
+  "odor": "Cannot assess from images — recommend in-person inspection",
+  "authenticitySignals": {
+    "positive": ["List visible indicators supporting authenticity: logo precision, stamp depth, stitch quality, material consistency, serial placement"],
+    "concerns": ["List any red flags: font irregularities, misaligned stitching, wrong hardware finish, material inconsistencies, stamp quality issues"],
+    "verdict": "Likely Authentic | Possibly Authentic | Unable to Determine | Concerns Present"
+  },
+  "wearEstimate": "Estimated usage level: Unused | Light (< 6 months) | Moderate (6-18 months) | Heavy (18+ months) | Professionally Restored",
+  "marketNotes": "Expert opinion on whether the seller's condition rating is accurate. Note if the price seems fair for the actual condition. Any leverage points for negotiation.",
+  "missingImages": ["List views NOT provided that would improve assessment: interior, bottom, serial number, date code, strap attachment, zipper pull, etc."]
 }
 
-Be thorough but honest. If you can't see certain areas clearly, say so. Base assessment ONLY on what's visible in the image.`;
+CRITICAL RULES:
+- Be brutally honest. Sellers overrate condition 80% of the time. Your job is to protect the buyer.
+- If an area is NOT visible in any image, say exactly that — never assume it's fine.
+- Note SPECIFIC locations of wear (e.g., "light scratching on bottom-left corner" not just "some wear").
+- Compare what you see across all images for consistency.
+- If only 1 image is provided, lower your confidence score and list all missing views.`;
 
 const ANTHROPIC_API = 'https://api.anthropic.com/v1/messages';
 const ANTHROPIC_VERSION = '2023-06-01';
@@ -828,9 +1083,9 @@ Rules:
 - Text-only confidence typically 0.5–0.8.`;
 
 /**
- * Classify a source product using Claude Vision.
+ * Classify a source product using AI (OpenAI or Anthropic).
  */
-async function classifyProductAI(product, apiKey) {
+async function classifyProductAI(product, apiKey, provider, model) {
   const content = [];
 
   // Include image if available.
@@ -854,55 +1109,32 @@ async function classifyProductAI(product, apiKey) {
     ].filter(Boolean).join('\n\n'),
   });
 
-  const res = await fetch(ANTHROPIC_API, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': ANTHROPIC_VERSION,
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-sonnet-4-5-20250514',
-      max_tokens: 1000,
-      system: SOURCE_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content }],
-    }),
+  const text = await callAI({
+    system: SOURCE_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content }],
+    model, apiKey, provider, maxTokens: 1000,
   });
 
-  if (!res.ok) throw new Error(`Anthropic ${res.status}`);
-  const data = await res.json();
-  const text = data.content?.[0]?.text || '';
   return parseAIJSON(text);
 }
 
 /**
- * Batch-classify search results using Claude.
+ * Batch-classify search results using AI.
  */
-async function classifyBatchAI(listings, apiKey) {
+async function classifyBatchAI(listings, apiKey, provider, model) {
   const listingText = listings.slice(0, 10).map((l, i) =>
     `Listing ${i + 1}:\nTitle: ${l.title || ''}\nPrice: ${l.price || ''}\nCondition: ${l.condition || ''}\nPlatform: ${l.platform || ''}`
   ).join('\n\n');
 
-  const res = await fetch(ANTHROPIC_API, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'x-api-key': apiKey,
-      'anthropic-version': ANTHROPIC_VERSION,
-      'anthropic-dangerous-direct-browser-access': 'true',
-    },
-    body: JSON.stringify({
-      model: 'claude-haiku-4-5-20241022',
-      max_tokens: 2000,
-      system: BATCH_SYSTEM_PROMPT,
-      messages: [{ role: 'user', content: listingText }],
-    }),
+  // Use cheaper model for batch if on OpenAI.
+  const batchModel = provider === 'openai' ? 'gpt-4o-mini' : model;
+
+  const text = await callAI({
+    system: BATCH_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: listingText }],
+    model: batchModel, apiKey, provider, maxTokens: 2000,
   });
 
-  if (!res.ok) throw new Error(`Anthropic ${res.status}`);
-  const data = await res.json();
-  const text = data.content?.[0]?.text || '';
   const parsed = parseAIJSON(text);
   return Array.isArray(parsed) ? parsed : [];
 }

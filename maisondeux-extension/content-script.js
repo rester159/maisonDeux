@@ -171,6 +171,7 @@
         url: window.location.href,
         platform: 'ebay',
         imageUrl: document.querySelector('#icImg, .ux-image-carousel img, img[itemprop="image"]')?.src || '',
+        imageUrls: collectAllImages(),
       };
     }
 
@@ -286,7 +287,71 @@
       url: window.location.href,
       platform,
       imageUrl,
+      imageUrls: collectAllImages(),
     };
+  }
+
+  /** Collect all product images from the page (thumbnails, gallery, carousel). */
+  function collectAllImages() {
+    const seen = new Set();
+    const results = [];
+
+    // Platform-specific selectors for product galleries.
+    const selectors = [
+      // eBay
+      '#vi_main_img_fs img', '.ux-image-carousel img', '.ux-image-grid img', '#icImg',
+      // TheRealReal
+      '[class*="ProductImage"] img', '[class*="product-image"] img', '[class*="gallery"] img',
+      // Vestiaire
+      '[class*="productGallery"] img', '[data-testid*="image"] img',
+      // Poshmark
+      '[class*="listing-image"] img', '[class*="carousel"] img',
+      // Grailed
+      '[class*="listing-cover"] img', '[class*="listing-photo"] img',
+      // Mercari
+      '[class*="ItemPhoto"] img', '[data-testid*="photo"] img',
+      // ShopGoodwill
+      '.product-image img', '.carousel img',
+      // Generic fallbacks
+      'meta[property="og:image"]',
+      '[itemprop="image"]',
+      'main img[src*="product"], main img[src*="item"], main img[src*="listing"]',
+    ];
+
+    for (const sel of selectors) {
+      try {
+        for (const el of document.querySelectorAll(sel)) {
+          let url = '';
+          if (el.tagName === 'META') {
+            url = el.content || '';
+          } else if (el.tagName === 'IMG') {
+            // Prefer data-src (lazy-loaded full-size) over src (thumbnail).
+            url = el.dataset.zoom || el.dataset.src || el.dataset.original || el.src || '';
+          } else {
+            url = el.getAttribute('src') || el.getAttribute('content') || '';
+          }
+
+          // Clean up — want full-size images, skip tiny icons/svgs.
+          if (!url || url.startsWith('data:') || url.endsWith('.svg')) continue;
+          if (url.includes('sprite') || url.includes('icon') || url.includes('logo')) continue;
+
+          // Normalize — upgrade to https, make absolute.
+          if (url.startsWith('//')) url = 'https:' + url;
+          else if (url.startsWith('/')) url = window.location.origin + url;
+
+          // Try to get full-size version (eBay s-l64 → s-l1600, etc.)
+          url = url.replace(/s-l\d+/g, 's-l1600');
+
+          if (!seen.has(url)) {
+            seen.add(url);
+            results.push(url);
+          }
+        }
+      } catch {}
+    }
+
+    // Cap at 10 images to avoid huge payloads.
+    return results.slice(0, 10);
   }
 
   function inferBrand(title) {

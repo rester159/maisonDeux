@@ -28,14 +28,37 @@
     </section>
 
     <section>
-      <h2>API Keys</h2>
-      <p class="desc">Enter API keys for enhanced search. eBay keys enable direct API search.</p>
+      <h2>AI Model</h2>
+      <p class="desc">Choose the AI provider and model for classification and condition reports.</p>
       <div class="key-fields">
+        <label>Provider
+          <select id="ai_provider">
+            <option value="openai">OpenAI</option>
+            <option value="anthropic">Anthropic</option>
+          </select>
+        </label>
+        <label>Model
+          <select id="ai_model">
+            <option value="gpt-4o">GPT-4o (Recommended)</option>
+            <option value="gpt-4o-mini">GPT-4o Mini (Faster/Cheaper)</option>
+            <option value="gpt-4-turbo">GPT-4 Turbo</option>
+            <option value="claude-3-5-sonnet-20241022">Claude 3.5 Sonnet</option>
+            <option value="claude-3-haiku-20240307">Claude 3 Haiku</option>
+          </select>
+        </label>
+      </div>
+    </section>
+
+    <section>
+      <h2>API Keys</h2>
+      <p class="desc">Enter API keys for enhanced search and AI features.</p>
+      <div class="key-fields">
+        <label>OpenAI API Key <input type="password" id="openai_key" placeholder="sk-proj-..." /></label>
+        <label>Anthropic API Key <input type="password" id="anthropic_key" placeholder="sk-ant-..." /></label>
         <label>eBay App ID <input type="password" id="ebay_app_id" placeholder="EnricoDA-sniperX-PRD-..." /></label>
         <label>eBay Cert ID <input type="password" id="ebay_cert_id" placeholder="PRD-..." /></label>
         <label>SerpAPI Key <input type="password" id="serpapi_key" placeholder="Optional — fallback search" /></label>
-        <label>Anthropic API Key <input type="password" id="anthropic_key" placeholder="Optional — AI classification" /></label>
-        <label>Condition Report Key <input type="password" id="condition_report_key" placeholder="Optional — uses Anthropic key if empty" /></label>
+        <label>Condition Report Key <input type="password" id="condition_report_key" placeholder="Optional — uses main AI key if empty" /></label>
       </div>
     </section>
 

@@ -34,6 +34,20 @@ const filterEls = {
   relevance: document.getElementById('filter-relevance'),
 };
 const $sortBy = document.getElementById('sort-by');
+const $mainView = document.getElementById('main-view');
+const $favoritesView = document.getElementById('favorites-view');
+const $favoritesBtn = document.getElementById('favorites-btn');
+const $favBackBtn = document.getElementById('fav-back-btn');
+const $favoritesList = document.getElementById('favorites-list');
+const $favCount = document.getElementById('fav-count');
+const $deepCompareBtn = document.getElementById('deep-compare-btn');
+const $saveSourceBtn = document.getElementById('save-source-btn');
+const $srcCondToggle = document.getElementById('source-condition-toggle');
+
+// ---- Analytics helper ----
+function track(category, action, label = '', value = 0) {
+  chrome.runtime.sendMessage({ type: 'TRACK_EVENT', payload: { category, action, label, value } });
+}
 
 // ---- State ----
 let isActive = true;
@@ -44,6 +58,7 @@ let platformsSearched = 0;
 let totalPlatforms = 0;
 let currentProductAttrs = null; // { brand, color, model, material }
 let filtersAutoSet = false;
+let favorites = []; // array of saved items with condition reports
 
 // ---- Init ----
 
@@ -90,11 +105,14 @@ $toggle.addEventListener('change', () => {
   isActive = $toggle.checked;
   chrome.storage.local.set({ maisondeux_active: isActive });
   chrome.runtime.sendMessage({ type: 'SET_ACTIVE', payload: { active: isActive } });
+  track('extension', isActive ? 'enabled' : 'disabled');
   updateView();
 });
 
 // ---- Settings ----
-$settingsBtn.addEventListener('click', () => chrome.runtime.openOptionsPage());
+$settingsBtn.addEventListener('click', () => {
+  chrome.tabs.create({ url: chrome.runtime.getURL('user-settings/user-settings.html') });
+});
 
 // ---- Message listeners ----
 
@@ -218,29 +236,39 @@ function showProduct(product) {
   const $details = document.getElementById('product-details');
   $details.innerHTML = '';
 
-  // Build attribute pills from ALL product text (title + description + condition).
+  // Build attribute pills. Use focused text (title + structured fields) for pills
+  // to avoid false positives from navigation/sidebar text on the page.
   $productAttrs.innerHTML = '';
-  const titleText = [
+  const focusedText = [
     product.brand,
     product.productName || product.title,
-    product.description,
     product.conditionText || product.condition,
     product.categoryText || product.category,
+    product.color,
+    product.material,
+    product.hardware,
+    product.model,
+    // Only first 500 chars of description (the actual product details, not page chrome).
+    product.description ? product.description.slice(0, 500) : null,
   ].filter(Boolean).join(' ');
+  const titleText = focusedText;
   console.log('[MaisonDeux][panel] titleText length:', titleText.length, 'sample:', titleText.slice(0, 200));
 
   const pills = [];
 
   // Price pill.
-  if (priceVal > 0) pills.push({ label: `$${priceVal.toLocaleString()}`, type: 'price' });
+  // Price shown in details line, not as a pill.
 
   // Color — prefer structured data, normalize to canonical English.
   let rawColor = product.color || product.attrs?.colors?.[0] || [...scanTitle(titleText, FILTER_COLORS)][0] || null;
   const colors = rawColor ? (COLOR_MAP[normalizeText(rawColor)] || rawColor) : null;
   if (colors) pills.push({ label: colors, type: 'color' });
 
-  // Model — prefer structured data from page.
-  const model = product.model || [...scanTitle(titleText, FILTER_MODELS)][0] || null;
+  // Model — prefer structured data, skip brand-pattern names like "Gucci GG".
+  let model = product.model || [...scanTitle(titleText, FILTER_MODELS)][0] || null;
+  // Filter out brand-pattern names that aren't real models.
+  const nonModels = ['gucci gg', 'louis vuitton', 'chanel', 'hermes', 'dior', 'prada'];
+  if (model && nonModels.includes(normalizeText(model))) model = [...scanTitle(titleText, FILTER_MODELS)][0] || null;
   if (model) pills.push({ label: model, type: 'model' });
 
   // Material — prefer structured data from page.
@@ -273,12 +301,17 @@ function showProduct(product) {
   if (size)               allPills.push({ label: size, type: 'size' });
   if (hardware)           allPills.push({ label: hardware + ' HW', type: 'hardware' });
   const currSym = (product.currency === 'EUR') ? '€' : (product.currency === 'GBP') ? '£' : (product.currency === 'CHF') ? 'CHF ' : '$';
-  if (priceVal > 0)       allPills.push({ label: `${currSym}${priceVal.toLocaleString()}`, type: 'price' });
+  // Price shown in details line, NOT as a pill.
   if (condition)          allPills.push({ label: condition, type: 'condition' });
   if (category)           allPills.push({ label: category, type: 'category' });
 
-  // Hide the old details line.
-  $details.innerHTML = '';
+  // Details line: brand · price · store
+  const detailParts = [];
+  if (brand) detailParts.push(brand);
+  if (priceVal > 0) detailParts.push(`<strong>${currSym}${priceVal.toLocaleString()}</strong>`);
+  const storeName = STORE_NAMES[product.platform] || product.platform || '';
+  if (storeName) detailParts.push(storeName);
+  $details.innerHTML = detailParts.join(' · ');
 
   for (const pill of allPills) {
     const chip = document.createElement('span');
@@ -286,6 +319,77 @@ function showProduct(product) {
     chip.textContent = pill.label;
     $productAttrs.appendChild(chip);
   }
+
+  // Source product condition report — reset on every new product.
+  const $srcBtn = document.getElementById('source-condition-btn');
+  const $srcReport = document.getElementById('source-condition-report');
+  const $srcDot = document.getElementById('source-condition-dot');
+  $srcReport.innerHTML = '';
+  $srcReport.classList.add('hidden');
+  $srcReport.dataset.loaded = '';
+  $srcReport.dataset.report = '';
+  $srcDot.className = 'sp-condition-dot sp-dot-pending';
+  $srcDot.innerHTML = '&#128270;';
+  $srcBtn.disabled = false;
+  $srcBtn.classList.add('hidden');
+  $srcCondToggle.classList.add('hidden');
+  $srcCondToggle.classList.remove('open');
+
+  // Save source button.
+  $saveSourceBtn.innerHTML = isFavorite(product) ? '&#9829;' : '&#9825;';
+  $saveSourceBtn.className = `sp-save-btn${isFavorite(product) ? ' saved' : ''}`;
+  $saveSourceBtn.onclick = () => toggleFavorite(product);
+
+  if (product.imageUrl || (product.imageUrls && product.imageUrls.length > 0)) {
+    $srcBtn.classList.remove('hidden');
+    $srcBtn.onclick = () => {
+      // If already generated, just toggle visibility.
+      if ($srcReport.dataset.loaded === 'true') {
+        $srcReport.classList.toggle('hidden');
+        $srcCondToggle.classList.toggle('open');
+        return;
+      }
+      $srcBtn.disabled = true;
+      $srcDot.innerHTML = '&#9203;'; // hourglass
+      chrome.runtime.sendMessage({
+        type: 'CONDITION_REPORT',
+        payload: {
+          imageUrl: product.imageUrl,
+          imageUrls: product.imageUrls || [],
+          title: product.productName || product.title,
+          platform: product.platform,
+        },
+      }, (response) => {
+        $srcBtn.disabled = false;
+        if (response?.report) {
+          $srcReport.innerHTML = renderConditionReport(response.report);
+          // Color-code the dot based on condition match.
+          const reportGrade = (response.report.overallGrade || '').toLowerCase();
+          const vendorCondition = (condition || '').toLowerCase();
+          const dotClass = getConditionDotClass(reportGrade, vendorCondition);
+          $srcDot.className = `sp-condition-dot ${dotClass}`;
+          $srcDot.innerHTML = '&#9679;'; // filled circle
+          // Store report on product for favorites.
+          product._conditionReport = response.report;
+        } else {
+          $srcReport.innerHTML = `<div class="sp-report-error">${response?.error || 'No response'}</div>`;
+          $srcDot.className = 'sp-condition-dot sp-dot-mismatch';
+          $srcDot.innerHTML = '&#9679;';
+        }
+        $srcReport.dataset.loaded = 'true';
+        $srcReport.classList.remove('hidden');
+        $srcCondToggle.classList.remove('hidden');
+        $srcCondToggle.classList.add('open');
+      });
+    };
+  }
+
+  // Condition toggle button — show/hide report without regenerating.
+  $srcCondToggle.onclick = () => {
+    if ($srcReport.dataset.loaded !== 'true') return;
+    $srcReport.classList.toggle('hidden');
+    $srcCondToggle.classList.toggle('open');
+  };
 
   // Store detected attributes for auto-setting filters after results arrive.
   currentProductAttrs = {
@@ -367,8 +471,14 @@ function renderResults() {
           if (keywordList) scanTitle(r.title || '', keywordList).forEach((v) => available.add(normalizeBrand(v) || v));
         } else {
           if (r[key]) available.add(r[key]);
-          if (keywordList) scanTitle(r.title || '', keywordList).forEach((v) => available.add(v));
-          if (key === 'condition' && r.condition) available.add(r.condition);
+          // Scan both title AND description for attributes.
+          const scanText = [r.title || '', r.condition || '', r.description || ''].join(' ');
+          if (keywordList) scanTitle(scanText, keywordList).forEach((v) => available.add(v));
+          if (key === 'condition' && r.condition) {
+            const mapped = CONDITION_MAP[normalizeText(r.condition)];
+            if (mapped) available.add(mapped);
+            else available.add(r.condition);
+          }
         }
       }
     }
@@ -511,6 +621,8 @@ function renderListing(listing) {
   const platform = listing.platform || listing.source || '';
   const faviconUrl = getPlatformFavicon(platform);
 
+  const saved = isFavorite(listing);
+
   wrapper.innerHTML = `
     <a class="sp-listing" href="${esc(listing.link || listing.url || '#')}" target="_blank" rel="noopener">
       ${imgSrc ? `<img class="sp-listing-img" src="${esc(imgSrc)}" alt="" />` : '<div class="sp-listing-img"></div>'}
@@ -525,47 +637,24 @@ function renderListing(listing) {
         </div>
         <div class="sp-listing-meta">
           <span class="sp-relevance ${scoreClass}">${scoreLabel} ${Math.round(score * 100)}%</span>
-          <button class="sp-condition-btn" title="AI Condition Report">&#128269; Report</button>
         </div>
       </div>
+      <button class="sp-listing-save${saved ? ' saved' : ''}" title="Save to favorites">${saved ? '&#9829;' : '&#9825;'}</button>
     </a>
-    <div class="sp-condition-report hidden"></div>
   `;
 
-  // Condition report button handler.
-  const btn = wrapper.querySelector('.sp-condition-btn');
-  const reportDiv = wrapper.querySelector('.sp-condition-report');
-
-  btn.addEventListener('click', (e) => {
+  const saveBtn = wrapper.querySelector('.sp-listing-save');
+  saveBtn.addEventListener('click', (e) => {
     e.preventDefault();
     e.stopPropagation();
-
-    if (reportDiv.dataset.loaded === 'true') {
-      reportDiv.classList.toggle('hidden');
-      return;
+    toggleFavorite(listing);
+    saveBtn.innerHTML = isFavorite(listing) ? '&#9829;' : '&#9825;';
+    saveBtn.classList.toggle('saved', isFavorite(listing));
+    if (currentProduct) {
+      $saveSourceBtn.innerHTML = isFavorite(currentProduct) ? '&#9829;' : '&#9825;';
+      $saveSourceBtn.classList.toggle('saved', isFavorite(currentProduct));
     }
-
-    btn.textContent = '⏳ Analyzing...';
-    btn.disabled = true;
-
-    chrome.runtime.sendMessage({
-      type: 'CONDITION_REPORT',
-      payload: { imageUrl: imgSrc, title: listing.title, platform },
-    }, (response) => {
-      btn.textContent = '🔍 Report';
-      btn.disabled = false;
-
-      if (response?.error) {
-        reportDiv.innerHTML = `<div class="sp-report-error">${esc(response.error)}</div>`;
-      } else if (response?.report) {
-        reportDiv.innerHTML = renderConditionReport(response.report);
-      } else {
-        reportDiv.innerHTML = '<div class="sp-report-error">No response from AI</div>';
-      }
-
-      reportDiv.dataset.loaded = 'true';
-      reportDiv.classList.remove('hidden');
-    });
+    track('listing', 'save_clicked', listing.platform || '');
   });
 
   return wrapper;
@@ -633,7 +722,7 @@ const FILTER_MODELS = [
   're-edition','galleria','double bag','cleo','matinee',
   'tb bag','lola','olympia','note',
   // Gucci
-  'jacquard','jaquard','soho','gg marmont','ophidia','dionysus','jackie','bamboo','horsebit','blondie','attache','gucci gg',
+  'jacquard','jaquard','soho','gg marmont','ophidia','dionysus','jackie','bamboo','horsebit','blondie','attache',
   // More
   'antigona','pandora','nightingale','shark','papier','motorcity','knife',
   'phantom','seau sangle','cabas','ava','triomphe','teen triomphe',
@@ -690,19 +779,239 @@ const DISPLAY_NAMES = {
   'classic flap': 'Classic Flap', 'classic double flap': 'Classic Double Flap',
 };
 
+// ========================================================================
+// UNIVERSAL TEXT NORMALIZER & TERM RESOLUTION PIPELINE
+// ========================================================================
+//
+// Pipeline:
+// 1. Take raw text (any format — "CollectionNoir", "Gold-Plated", etc.)
+// 2. Split into tokens using heuristics (spaces, underscores, commas,
+//    camelCase, dashes, slashes, dots, parentheses)
+// 3. Try matching single tokens + multi-token combos against all dicts
+// 4. Unmatched tokens → stored for AI resolution
+// 5. AI resolution → either maps to existing canonical term OR adds new
+// 6. Learned mappings persist in chrome.storage.local
+//
+// ========================================================================
+
+/** Master dictionary — ALL known terms across all categories. Built once. */
+const MASTER_DICT = {};
+function buildMasterDict() {
+  for (const [k, v] of Object.entries(COLOR_MAP))     MASTER_DICT[normalizeText(k)] = { type: 'color', canonical: v };
+  for (const [k, v] of Object.entries(MATERIAL_MAP))   MASTER_DICT[normalizeText(k)] = { type: 'material', canonical: v };
+  for (const [k, v] of Object.entries(CONDITION_MAP))   MASTER_DICT[normalizeText(k)] = { type: 'condition', canonical: v };
+  for (const b of FILTER_BRANDS)                        MASTER_DICT[normalizeText(b)] = { type: 'brand', canonical: DISPLAY_NAMES[b] || CANONICAL_BRANDS[b] || titleCase(b) };
+  for (const m of FILTER_MODELS)                        MASTER_DICT[normalizeText(m)] = { type: 'model', canonical: DISPLAY_NAMES[m] || titleCase(m) };
+  for (const h of FILTER_HARDWARE)                      MASTER_DICT[normalizeText(h)] = { type: 'hardware', canonical: titleCase(h) };
+}
+
+/** Loaded learned terms from chrome.storage.local. */
+let learnedTerms = {}; // { normalizedTerm: { type, canonical, source } }
+
+function loadLearnedTerms() {
+  chrome.storage.local.get('learnedTerms', (data) => {
+    learnedTerms = data.learnedTerms || {};
+    console.log('[MaisonDeux][panel] Loaded', Object.keys(learnedTerms).length, 'learned terms');
+  });
+}
+
+function saveLearnedTerms() {
+  chrome.storage.local.set({ learnedTerms });
+}
+
+/** Record an unknown term for later AI resolution. */
+let unknownTerms = {}; // { normalizedTerm: { raw, count, context } }
+
+function recordUnknown(raw, context) {
+  const norm = normalizeText(raw);
+  if (norm.length < 2 || STOP_WORDS.has(norm)) return;
+  if (MASTER_DICT[norm] || learnedTerms[norm]) return;
+  if (!unknownTerms[norm]) {
+    unknownTerms[norm] = { raw, count: 0, context: '' };
+  }
+  unknownTerms[norm].count++;
+  if (context) unknownTerms[norm].context = context.slice(0, 100);
+}
+
+/** Common stop words to skip during tokenization. */
+const STOP_WORDS = new Set([
+  'the','a','an','and','or','of','in','on','at','to','for','with','by','from',
+  'is','it','this','that','was','are','be','been','has','have','had','will',
+  'can','may','do','does','did','not','no','but','all','any','some','each',
+  'us','our','we','you','your','its','his','her','they','them','their',
+  'free','shipping','sale','now','off','new','used','pre','owned',
+  'authentic','original','genuine','real','100','lot','set','pair','size',
+  'item','listing','buy','sell','price','offer','bid','auction',
+  'condition','see','photo','photos','picture','pictures','image','images',
+  'description','details','please','note','read',
+  'very','great','super','ultra','extra','mini','small','medium','large',
+  'bag','handbag','purse','tote','clutch','wallet','shoes','watch','ring',
+  'necklace','bracelet','earring','sunglasses','scarf','belt','hat','coat',
+  'top','bottom','dress','shirt','jacket','pants','skirt',
+]);
+
 /**
- * Robust text scanner — finds keywords regardless of formatting.
- * Handles: no spaces (CollectionNoir), camelCase (GoldPlated),
- * punctuation (Gold-Plated), mixed case, accents, symbols.
- *
- * Normalizes the input text by:
- * 1. Lowercasing
- * 2. Stripping accents (è→e)
- * 3. Inserting spaces before capitals (camelCase → camel case)
- * 4. Replacing all non-alphanumeric with spaces
- * 5. Collapsing multiple spaces
- *
- * Then does simple substring matching on the normalized text.
+ * Normalize text for robust matching.
+ * "CollectionNoir Clemence LeatherGold-Plated" →
+ * "collection noir clemence leather gold plated"
+ */
+function normalizeText(text) {
+  if (!text) return '';
+  return text
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/([a-z])([A-Z])/g, '$1 $2')
+    .replace(/([a-zA-Z])(\d)/g, '$1 $2')
+    .replace(/(\d)([a-zA-Z])/g, '$1 $2')
+    .replace(/[^a-zA-Z0-9\s]/g, ' ')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function titleCase(s) {
+  return s.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
+}
+
+/**
+ * Tokenize raw text into candidate terms.
+ * Splits on: spaces, commas, semicolons, pipes, slashes, dashes,
+ * underscores, dots, parens, brackets. Also splits camelCase.
+ * Returns both individual tokens AND sliding multi-token windows (2-4 words)
+ * to catch multi-word terms like "wallet on chain" or "very good condition".
+ */
+function tokenize(rawText) {
+  const normalized = normalizeText(rawText);
+  const words = normalized.split(' ').filter(w => w.length > 1);
+
+  const tokens = new Set();
+
+  // Individual words.
+  for (const w of words) tokens.add(w);
+
+  // Multi-word windows (2, 3, 4 word combos).
+  for (let windowSize = 2; windowSize <= 4 && windowSize <= words.length; windowSize++) {
+    for (let i = 0; i <= words.length - windowSize; i++) {
+      tokens.add(words.slice(i, i + windowSize).join(' '));
+    }
+  }
+
+  return tokens;
+}
+
+/**
+ * Full-scan a text blob and return all matched attributes.
+ * Returns { brand, model, color, material, condition, hardware, unknown[] }
+ */
+function extractAttributes(rawText) {
+  const normalized = normalizeText(rawText);
+  const result = {
+    brands: new Set(),
+    models: new Set(),
+    colors: new Set(),
+    materials: new Set(),
+    conditions: new Set(),
+    hardware: new Set(),
+    unknown: [],
+  };
+
+  // Phase 1: Match against master dict + learned terms (longest first).
+  const allKnown = { ...MASTER_DICT, ...learnedTerms };
+  const sortedKeys = Object.keys(allKnown).sort((a, b) => b.length - a.length);
+  const consumed = new Set(); // Track matched regions to avoid double-counting.
+
+  for (const key of sortedKeys) {
+    if (normalized.includes(key)) {
+      // Check we haven't already consumed this region via a longer match.
+      let alreadyConsumed = false;
+      for (const c of consumed) {
+        if (c.includes(key)) { alreadyConsumed = true; break; }
+      }
+      if (alreadyConsumed) continue;
+
+      consumed.add(key);
+      const entry = allKnown[key];
+      switch (entry.type) {
+        case 'brand':     result.brands.add(entry.canonical); break;
+        case 'model':     result.models.add(entry.canonical); break;
+        case 'color':     result.colors.add(entry.canonical); break;
+        case 'material':  result.materials.add(entry.canonical); break;
+        case 'condition': result.conditions.add(entry.canonical); break;
+        case 'hardware':  result.hardware.add(entry.canonical); break;
+      }
+    }
+  }
+
+  // Phase 2: Collect unmatched tokens (for later AI resolution).
+  const tokens = tokenize(rawText);
+  for (const token of tokens) {
+    if (token.length < 3) continue;
+    if (STOP_WORDS.has(token)) continue;
+    if (consumed.has(token)) continue;
+
+    // Check if this token is a substring of any consumed key.
+    let partOfMatch = false;
+    for (const c of consumed) {
+      if (c.includes(token) || token.includes(c)) { partOfMatch = true; break; }
+    }
+    if (partOfMatch) continue;
+
+    // Only record single-word unknowns (multi-word combos are noisy).
+    if (!token.includes(' ') && !MASTER_DICT[token] && !learnedTerms[token]) {
+      recordUnknown(token, rawText.slice(0, 200));
+    }
+  }
+
+  return {
+    brands: [...result.brands],
+    models: [...result.models],
+    colors: [...result.colors],
+    materials: [...result.materials],
+    conditions: [...result.conditions],
+    hardware: [...result.hardware],
+    unknown: Object.keys(unknownTerms).slice(0, 20),
+  };
+}
+
+/**
+ * Resolve unknown terms via AI. Called periodically or on demand.
+ * Sends batch of unknown terms to Claude, gets back mappings.
+ */
+async function resolveUnknownTerms() {
+  const unknowns = Object.entries(unknownTerms)
+    .filter(([, v]) => v.count >= 1)
+    .map(([norm, v]) => ({ normalized: norm, raw: v.raw, context: v.context }))
+    .slice(0, 30);
+
+  if (unknowns.length === 0) return;
+
+  console.log('[MaisonDeux][panel] Resolving', unknowns.length, 'unknown terms');
+
+  chrome.runtime.sendMessage({
+    type: 'RESOLVE_TERMS',
+    payload: { terms: unknowns },
+  }, (response) => {
+    if (!response?.resolved) return;
+
+    for (const r of response.resolved) {
+      const norm = normalizeText(r.term);
+      if (r.type && r.canonical) {
+        // Learned a new mapping!
+        learnedTerms[norm] = { type: r.type, canonical: r.canonical, source: 'ai' };
+        delete unknownTerms[norm];
+        console.log('[MaisonDeux][panel] Learned:', r.term, '→', r.type, ':', r.canonical);
+      } else if (r.skip) {
+        // AI says this is noise — mark as stop word to avoid re-checking.
+        delete unknownTerms[norm];
+      }
+    }
+
+    saveLearnedTerms();
+  });
+}
+
+/**
+ * Scan text for keywords in a specific category.
+ * Backward-compatible wrapper around extractAttributes.
  */
 function scanTitle(title, keywords) {
   const normalized = normalizeText(title);
@@ -714,37 +1023,33 @@ function scanTitle(title, keywords) {
   for (const kw of sorted) {
     const kwNorm = normalizeText(kw);
     if (normalized.includes(kwNorm)) {
-      const canonical = COLOR_MAP[kw] || MATERIAL_MAP[kw] || CONDITION_MAP[kw] || DISPLAY_NAMES[kw] || kw.split(' ').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ');
-      // Skip if a longer keyword already matched to this canonical.
+      const canonical = COLOR_MAP[kw] || MATERIAL_MAP[kw] || CONDITION_MAP[kw] || DISPLAY_NAMES[kw] || learnedTerms[kwNorm]?.canonical || titleCase(kw);
       if (!found.has(canonical)) found.add(canonical);
     }
   }
+
+  // Also check learned terms for this category.
+  const categoryType = keywords === FILTER_COLORS ? 'color'
+    : keywords === FILTER_MATERIALS ? 'material'
+    : keywords === FILTER_BRANDS ? 'brand'
+    : keywords === FILTER_MODELS ? 'model'
+    : keywords === FILTER_CONDITIONS ? 'condition'
+    : keywords === FILTER_HARDWARE ? 'hardware'
+    : null;
+
+  if (categoryType) {
+    for (const [norm, entry] of Object.entries(learnedTerms)) {
+      if (entry.type === categoryType && normalized.includes(norm)) {
+        found.add(entry.canonical);
+      }
+    }
+  }
+
   return found;
 }
 
-/**
- * Normalize text for robust matching.
- * "CollectionNoir Clemence LeatherGold-Plated" →
- * "collection noir clemence leather gold plated"
- */
-function normalizeText(text) {
-  if (!text) return '';
-  return text
-    // Strip accents: è→e, é→e, etc.
-    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
-    // Insert space before uppercase letters (camelCase → camel Case)
-    .replace(/([a-z])([A-Z])/g, '$1 $2')
-    // Insert space between letter and number
-    .replace(/([a-zA-Z])(\d)/g, '$1 $2')
-    .replace(/(\d)([a-zA-Z])/g, '$1 $2')
-    // Replace all non-alphanumeric with space
-    .replace(/[^a-zA-Z0-9\s]/g, ' ')
-    // Lowercase
-    .toLowerCase()
-    // Collapse whitespace
-    .replace(/\s+/g, ' ')
-    .trim();
-}
+// NOTE: buildMasterDict() and loadLearnedTerms() called at end of file
+// after all dictionaries are defined.
 
 // populateFilterOptions is now inline in renderResults for cascading behavior.
 
@@ -823,19 +1128,50 @@ function renderConditionReport(report) {
     return '#c62828';
   };
 
-  const sections = ['exterior', 'hardware', 'corners', 'stitching', 'handles', 'interior'];
+  const gradeEmoji = (g) => {
+    if (!g || g === 'N/A' || g === 'Not Visible') return '—';
+    if (g === 'Excellent' || g === 'New') return '●';
+    if (g === 'Very Good') return '●';
+    if (g === 'Good') return '●';
+    if (g === 'Fair') return '●';
+    return '●';
+  };
+
+  const sections = ['exterior', 'hardware', 'corners', 'edges', 'stitching', 'handles', 'interior', 'structure'];
   const sectionRows = sections.map((key) => {
     const s = report[key];
     if (!s) return '';
     return `<div class="sp-report-row">
-      <span class="sp-report-label">${key.charAt(0).toUpperCase() + key.slice(1)}</span>
-      <span class="sp-report-grade" style="color:${gradeColor(s.grade)}">${s.grade || '—'}</span>
-      <span class="sp-report-notes">${esc(s.notes || '')}</span>
+      <div class="sp-report-row-header">
+        <span class="sp-report-label">${key.charAt(0).toUpperCase() + key.slice(1)}</span>
+        <span class="sp-report-grade" style="color:${gradeColor(s.grade)}">${gradeEmoji(s.grade)} ${s.grade || '—'}</span>
+      </div>
+      <div class="sp-report-notes">${esc(s.notes || '')}</div>
     </div>`;
   }).join('');
 
-  const concerns = (report.concerns || []).map((c) => `<li>${esc(c)}</li>`).join('');
-  const authSignals = (report.authenticitySignals || []).map((s) => `<li>${esc(s)}</li>`).join('');
+  // Authenticity section (new format).
+  let authHtml = '';
+  const auth = report.authenticitySignals;
+  if (auth && typeof auth === 'object' && !Array.isArray(auth)) {
+    const positive = (auth.positive || []).map((s) => `<li class="sp-auth-positive">${esc(s)}</li>`).join('');
+    const concerns = (auth.concerns || []).map((s) => `<li class="sp-auth-concern">${esc(s)}</li>`).join('');
+    const verdictColor = auth.verdict?.includes('Likely') ? '#2e7d32' : auth.verdict?.includes('Concerns') ? '#c62828' : '#666';
+    authHtml = `
+      <div class="sp-report-section sp-auth-section">
+        <strong>Authenticity Assessment</strong>
+        <div class="sp-auth-verdict" style="color:${verdictColor}">${esc(auth.verdict || 'Unable to Determine')}</div>
+        ${positive ? `<div class="sp-auth-group"><span class="sp-auth-label">Positive signals:</span><ul>${positive}</ul></div>` : ''}
+        ${concerns ? `<div class="sp-auth-group"><span class="sp-auth-label">Concerns:</span><ul>${concerns}</ul></div>` : ''}
+      </div>`;
+  } else if (Array.isArray(auth)) {
+    // Legacy format.
+    const items = auth.map((s) => `<li>${esc(s)}</li>`).join('');
+    authHtml = items ? `<div class="sp-report-section"><strong>Authenticity:</strong><ul>${items}</ul></div>` : '';
+  }
+
+  // Missing images.
+  const missing = (report.missingImages || []).map((m) => `<li>${esc(m)}</li>`).join('');
 
   return `
     <div class="sp-report">
@@ -844,12 +1180,14 @@ function renderConditionReport(report) {
           ${esc(report.overallGrade || 'Unknown')}
         </span>
         <span class="sp-report-confidence">${Math.round((report.confidenceScore || 0) * 100)}% confidence</span>
+        ${report.imagesAnalyzed ? `<span class="sp-report-images">${report.imagesAnalyzed} images analyzed</span>` : ''}
       </div>
       <p class="sp-report-summary">${esc(report.summary || '')}</p>
-      ${sectionRows}
-      ${concerns ? `<div class="sp-report-section"><strong>Concerns:</strong><ul>${concerns}</ul></div>` : ''}
-      ${authSignals ? `<div class="sp-report-section"><strong>Authenticity:</strong><ul>${authSignals}</ul></div>` : ''}
-      ${report.recommendations ? `<p class="sp-report-rec"><strong>Recommendation:</strong> ${esc(report.recommendations)}</p>` : ''}
+      ${report.wearEstimate ? `<div class="sp-report-wear"><strong>Wear estimate:</strong> ${esc(report.wearEstimate)}</div>` : ''}
+      <div class="sp-report-grid">${sectionRows}</div>
+      ${authHtml}
+      ${report.marketNotes ? `<div class="sp-report-section"><strong>Market Assessment:</strong><p>${esc(report.marketNotes)}</p></div>` : ''}
+      ${missing ? `<div class="sp-report-section sp-report-missing"><strong>Missing views for better assessment:</strong><ul>${missing}</ul></div>` : ''}
     </div>
   `;
 }
@@ -868,3 +1206,289 @@ function getPlatformFavicon(platform) {
   const domain = domains[platform];
   return domain ? `https://www.google.com/s2/favicons?domain=${domain}&sz=16` : null;
 }
+
+// ---- Initialize term resolution system (must be after all dicts defined) ----
+buildMasterDict();
+loadLearnedTerms();
+
+// ========================================================================
+// CONDITION DOT LOGIC
+// ========================================================================
+
+function getConditionDotClass(aiGrade, vendorCondition) {
+  if (!aiGrade) return 'sp-dot-pending';
+
+  const GRADE_ORDER = { 'new': 5, 'excellent': 4, 'very good': 3, 'good': 2, 'fair': 1, 'poor': 0 };
+  const aiLevel = GRADE_ORDER[aiGrade.toLowerCase()] ?? -1;
+
+  if (!vendorCondition) return aiLevel >= 3 ? 'sp-dot-match' : 'sp-dot-partial';
+
+  // Normalize vendor condition through CONDITION_MAP.
+  const vendorNorm = (CONDITION_MAP[normalizeText(vendorCondition)] || vendorCondition).toLowerCase();
+  const vendorLevel = GRADE_ORDER[vendorNorm] ?? -1;
+
+  if (vendorLevel < 0 || aiLevel < 0) return 'sp-dot-partial';
+
+  const diff = Math.abs(aiLevel - vendorLevel);
+  if (diff === 0) return 'sp-dot-match'; // Green — exact match.
+  if (diff === 1) return 'sp-dot-partial'; // Yellow — one tier off.
+  return 'sp-dot-mismatch'; // Red — two+ tiers off.
+}
+
+// ========================================================================
+// FAVORITES SYSTEM
+// ========================================================================
+
+// Load favorites from storage.
+chrome.storage.local.get('maisondeux_favorites', (data) => {
+  favorites = data.maisondeux_favorites || [];
+  updateFavBadge();
+});
+
+function saveFavorites() {
+  chrome.storage.local.set({ maisondeux_favorites: favorites });
+  updateFavBadge();
+}
+
+function updateFavBadge() {
+  $favoritesBtn.title = `My Favorites (${favorites.length})`;
+}
+
+function getFavKey(item) {
+  return (item.link || item.url || '') + '|' + (item.title || item.productName || '');
+}
+
+function isFavorite(item) {
+  const key = getFavKey(item);
+  return favorites.some((f) => getFavKey(f) === key);
+}
+
+function toggleFavorite(item) {
+  const key = getFavKey(item);
+  const idx = favorites.findIndex((f) => getFavKey(f) === key);
+  if (idx >= 0) {
+    favorites.splice(idx, 1);
+    track('favorite', 'removed', item.platform || '');
+  } else {
+    track('favorite', 'saved', item.platform || '');
+    // Save a clean copy with essential fields.
+    favorites.push({
+      title: item.productName || item.title || '',
+      brand: item.brand || '',
+      price: item.price || item.priceValue || '',
+      currency: item.currency || 'USD',
+      platform: item.platform || item.source || '',
+      link: item.link || item.url || '',
+      img: item.img || item.imageUrl || '',
+      color: item.color || '',
+      material: item.material || '',
+      model: item.model || '',
+      condition: item.conditionText || item.condition || '',
+      _conditionReport: item._conditionReport || null,
+      savedAt: Date.now(),
+    });
+  }
+  saveFavorites();
+  // Update source button state.
+  if (currentProduct) {
+    $saveSourceBtn.innerHTML = isFavorite(currentProduct) ? '&#9829;' : '&#9825;';
+    $saveSourceBtn.classList.toggle('saved', isFavorite(currentProduct));
+  }
+}
+
+// ---- Favorites view ----
+
+$favoritesBtn.addEventListener('click', () => {
+  const isShowingFavs = !$favoritesView.classList.contains('hidden');
+  if (isShowingFavs) {
+    // Go back to main view.
+    $favoritesView.classList.add('hidden');
+    $mainView.classList.remove('hidden');
+  } else {
+    // Show favorites.
+    $mainView.classList.add('hidden');
+    $favoritesView.classList.remove('hidden');
+    renderFavorites();
+    track('navigation', 'favorites_opened');
+  }
+});
+
+$favBackBtn.addEventListener('click', () => {
+  $favoritesView.classList.add('hidden');
+  $mainView.classList.remove('hidden');
+});
+
+document.getElementById('fav-sort')?.addEventListener('change', renderFavorites);
+document.getElementById('fav-filter-brand')?.addEventListener('change', renderFavorites);
+document.getElementById('fav-filter-store')?.addEventListener('change', renderFavorites);
+
+function renderFavorites() {
+  const sortMode = document.getElementById('fav-sort')?.value || 'order';
+  const brandFilter = (document.getElementById('fav-filter-brand')?.value || '').toLowerCase();
+  const storeFilter = (document.getElementById('fav-filter-store')?.value || '').toLowerCase();
+
+  // Populate brand/store filter dropdowns.
+  const brands = new Set();
+  const stores = new Set();
+  for (const f of favorites) {
+    if (f.brand) brands.add(normalizeBrand(f.brand) || f.brand);
+    if (f.platform) stores.add(STORE_NAMES[f.platform] || f.platform);
+  }
+  populateFavDropdown('fav-filter-brand', 'Any Brand', brands);
+  populateFavDropdown('fav-filter-store', 'Any Store', stores);
+
+  // Filter.
+  let list = [...favorites];
+  if (brandFilter) list = list.filter((f) => normalizeText(f.brand).includes(normalizeText(brandFilter)));
+  if (storeFilter) list = list.filter((f) => (STORE_NAMES[f.platform] || f.platform || '').toLowerCase().includes(storeFilter));
+
+  // Sort.
+  switch (sortMode) {
+    case 'price-asc': list.sort((a, b) => parsePrice(a.price) - parsePrice(b.price)); break;
+    case 'price-desc': list.sort((a, b) => parsePrice(b.price) - parsePrice(a.price)); break;
+    case 'brand': list.sort((a, b) => (a.brand || '').localeCompare(b.brand || '')); break;
+  }
+
+  $favCount.textContent = `${list.length} favorite${list.length !== 1 ? 's' : ''}`;
+  $favoritesList.innerHTML = '';
+
+  if (list.length === 0) {
+    $favoritesList.innerHTML = '<div class="sp-no-results">No favorites saved yet.<br>Click ♡ on any listing to save it.</div>';
+    return;
+  }
+
+  list.forEach((fav, idx) => {
+    const card = document.createElement('div');
+    card.className = 'sp-fav-card';
+    card.draggable = true;
+    card.dataset.idx = idx;
+
+    const platform = fav.platform || '';
+    const favicon = getPlatformFavicon(platform);
+    const priceVal = parsePrice(fav.price);
+    const hasCR = !!fav._conditionReport;
+    const crDotClass = hasCR ? getConditionDotClass(fav._conditionReport.overallGrade, fav.condition) : 'sp-dot-pending';
+
+    card.innerHTML = `
+      <div class="sp-fav-card-header">
+        <span class="sp-fav-card-title">${favicon ? `<img class="sp-platform-icon" src="${esc(favicon)}" style="vertical-align:middle;margin-right:3px" />` : ''}${esc(fav.title)}</span>
+        <div class="sp-fav-card-actions">
+          <button class="sp-fav-action-btn move-up" title="Move up">&#9650;</button>
+          <button class="sp-fav-action-btn move-down" title="Move down">&#9660;</button>
+          <button class="sp-fav-action-btn delete" title="Remove">&#10005;</button>
+        </div>
+      </div>
+      <div class="sp-fav-card-body">
+        ${fav.img ? `<img class="sp-fav-card-img" src="${esc(fav.img)}" alt="" />` : '<div class="sp-fav-card-img"></div>'}
+        <div class="sp-fav-card-info">
+          <div class="sp-fav-card-price">${priceVal > 0 ? '$' + priceVal.toLocaleString() : ''}</div>
+          <div class="sp-fav-card-meta">
+            ${[normalizeBrand(fav.brand), fav.color, fav.material, fav.condition].filter(Boolean).join(' · ')}
+          </div>
+          <div class="sp-fav-card-meta" style="color:#999">${STORE_NAMES[platform] || platform}</div>
+        </div>
+      </div>
+      <div class="sp-fav-card-report">
+        <button class="sp-condition-btn fav-cr-btn">
+          <span class="sp-condition-dot ${crDotClass}">${hasCR ? '&#9679;' : '&#128270;'}</span>
+          ${hasCR ? 'View Report' : 'Condition Report'}
+        </button>
+        <button class="sp-condition-toggle fav-cr-toggle ${hasCR ? '' : 'hidden'}">&#9660;</button>
+      </div>
+      <div class="fav-cr-content hidden"></div>
+    `;
+
+    // Wire buttons.
+    card.querySelector('.move-up').onclick = () => moveFavorite(idx, -1);
+    card.querySelector('.move-down').onclick = () => moveFavorite(idx, 1);
+    card.querySelector('.delete').onclick = () => { favorites.splice(favorites.indexOf(fav), 1); saveFavorites(); renderFavorites(); };
+
+    const crBtn = card.querySelector('.fav-cr-btn');
+    const crToggle = card.querySelector('.fav-cr-toggle');
+    const crContent = card.querySelector('.fav-cr-content');
+
+    crBtn.onclick = () => {
+      if (hasCR) {
+        // Already have report — toggle visibility.
+        crContent.innerHTML = renderConditionReport(fav._conditionReport);
+        crContent.classList.toggle('hidden');
+        crToggle.classList.toggle('open');
+        return;
+      }
+      // Generate report.
+      crBtn.disabled = true;
+      crBtn.querySelector('.sp-condition-dot').innerHTML = '&#9203;';
+      chrome.runtime.sendMessage({
+        type: 'CONDITION_REPORT',
+        payload: { imageUrl: fav.img, imageUrls: [], title: fav.title, platform: fav.platform },
+      }, (response) => {
+        crBtn.disabled = false;
+        if (response?.report) {
+          fav._conditionReport = response.report;
+          saveFavorites();
+          crContent.innerHTML = renderConditionReport(response.report);
+          const dot = crBtn.querySelector('.sp-condition-dot');
+          dot.className = `sp-condition-dot ${getConditionDotClass(response.report.overallGrade, fav.condition)}`;
+          dot.innerHTML = '&#9679;';
+          crBtn.childNodes[crBtn.childNodes.length - 1].textContent = ' View Report';
+          crToggle.classList.remove('hidden');
+        } else {
+          crContent.innerHTML = `<div class="sp-report-error">${response?.error || 'Failed'}</div>`;
+        }
+        crContent.classList.remove('hidden');
+        crToggle.classList.add('open');
+      });
+    };
+
+    crToggle.onclick = () => {
+      crContent.classList.toggle('hidden');
+      crToggle.classList.toggle('open');
+    };
+
+    // Open listing link on card body click.
+    card.querySelector('.sp-fav-card-body').style.cursor = 'pointer';
+    card.querySelector('.sp-fav-card-body').onclick = () => {
+      if (fav.link) window.open(fav.link, '_blank');
+    };
+
+    $favoritesList.appendChild(card);
+  });
+}
+
+function moveFavorite(idx, dir) {
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= favorites.length) return;
+  [favorites[idx], favorites[newIdx]] = [favorites[newIdx], favorites[idx]];
+  saveFavorites();
+  renderFavorites();
+}
+
+function populateFavDropdown(id, defaultText, values) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const currentVal = el.value;
+  el.innerHTML = `<option value="">${defaultText}</option>`;
+  for (const v of [...values].sort()) {
+    const opt = document.createElement('option');
+    opt.value = v.toLowerCase();
+    opt.textContent = v;
+    if (v.toLowerCase() === currentVal) opt.selected = true;
+    el.appendChild(opt);
+  }
+}
+
+// ========================================================================
+// DEEP COMPARISON (Full-screen view)
+// ========================================================================
+
+$deepCompareBtn.addEventListener('click', () => {
+  if (!favorites.length) { alert('No favorites to compare.'); return; }
+  // Store data then open comparison tab.
+  const data = JSON.stringify(favorites);
+  console.log('[MaisonDeux][panel] Saving compare data:', favorites.length, 'items');
+  chrome.storage.local.set({ maisondeux_compare_data: data }, () => {
+    console.log('[MaisonDeux][panel] Compare data saved, opening tab');
+    chrome.tabs.create({ url: chrome.runtime.getURL('compare/compare.html') });
+  });
+  track('navigation', 'deep_compare_opened', '', favorites.length);
+});

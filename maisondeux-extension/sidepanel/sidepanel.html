@@ -18,72 +18,107 @@
         <input type="checkbox" id="toggle-active" checked />
         <span class="sp-toggle-slider"></span>
       </label>
+      <button id="favorites-btn" class="sp-icon-btn" title="My Favorites">&#9829;</button>
       <button id="settings-btn" class="sp-icon-btn" title="Settings">&#9881;</button>
     </div>
   </header>
 
-  <!-- States -->
-  <div id="state-off" class="sp-state hidden">
-    <p class="sp-state-icon">&#9209;</p>
-    <p>MaisonDeux is paused.</p>
-    <p class="sp-hint">Toggle the switch above to start scanning.</p>
-  </div>
-
-  <div id="state-idle" class="sp-state">
-    <p class="sp-state-icon">&#128270;</p>
-    <p>Navigate to a product page on a supported site.</p>
-    <p class="sp-hint">eBay, TheRealReal, Poshmark, Vestiaire, Grailed, Mercari, ShopGoodwill</p>
-  </div>
-
-  <div id="state-scanning" class="sp-state hidden">
-    <div class="sp-spinner"></div>
-    <p id="scan-status">Scanning platforms...</p>
-  </div>
-
-  <!-- Product context -->
-  <section id="product-context" class="hidden">
-    <div class="sp-product-card">
-      <h2 id="product-name"><img id="product-platform-icon" class="sp-platform-icon" src="" alt="" /> <span id="product-name-text"></span></h2>
-      <div id="product-details" class="sp-product-details"></div>
-      <div id="product-attrs" class="sp-chips"></div>
+  <!-- ========= MAIN VIEW ========= -->
+  <div id="main-view">
+    <!-- States -->
+    <div id="state-off" class="sp-state hidden">
+      <p class="sp-state-icon">&#9209;</p>
+      <p>MaisonDeux is paused.</p>
+      <p class="sp-hint">Toggle the switch above to start scanning.</p>
     </div>
-  </section>
 
-  <!-- Filters -->
-  <section id="filter-section" class="hidden">
-    <div class="sp-filters">
-      <select id="filter-brand" class="sp-filter"><option value="">Any Brand</option></select>
-      <select id="filter-store" class="sp-filter"><option value="">Any Store</option></select>
-      <select id="filter-color" class="sp-filter"><option value="">Any Color</option></select>
-      <select id="filter-model" class="sp-filter"><option value="">Any Model</option></select>
-      <select id="filter-material" class="sp-filter"><option value="">Any Material</option></select>
-      <select id="filter-condition" class="sp-filter"><option value="">Any Condition</option></select>
-      <div class="sp-filter-row">
-        <label class="sp-hint">Sort:</label>
-        <select id="sort-by" class="sp-filter" style="flex:1">
-          <option value="relevance" selected>Relevance</option>
-          <option value="price-asc">Price ↑</option>
-          <option value="price-desc">Price ↓</option>
-          <option value="savings">Savings</option>
-        </select>
-        <label class="sp-hint">Min:</label>
-        <select id="filter-relevance" class="sp-filter" style="width:55px">
-          <option value="0" selected>Any</option>
-          <option value="0.3">30%</option>
-          <option value="0.5">50%</option>
-          <option value="0.7">70%</option>
-          <option value="0.85">85%</option>
-        </select>
-        <a href="#" id="clear-filters" class="sp-clear-filters hidden">Clear</a>
+    <div id="state-idle" class="sp-state">
+      <p class="sp-state-icon">&#128270;</p>
+      <p>Navigate to a product page on a supported site.</p>
+      <p class="sp-hint">eBay, TheRealReal, Poshmark, Vestiaire, Grailed, Mercari, ShopGoodwill</p>
+    </div>
+
+    <div id="state-scanning" class="sp-state hidden">
+      <div class="sp-spinner"></div>
+      <p id="scan-status">Scanning platforms...</p>
+    </div>
+
+    <!-- Product context -->
+    <section id="product-context" class="hidden">
+      <div class="sp-product-card">
+        <div class="sp-product-card-header">
+          <h2 id="product-name"><img id="product-platform-icon" class="sp-platform-icon" src="" alt="" /> <span id="product-name-text"></span></h2>
+          <button id="save-source-btn" class="sp-save-btn" title="Save to favorites">&#9825;</button>
+        </div>
+        <div id="product-details" class="sp-product-details"></div>
+        <div id="product-attrs" class="sp-chips"></div>
+        <div class="sp-condition-row">
+          <button id="source-condition-btn" class="sp-condition-btn sp-source-report-btn hidden" title="AI Condition Report">
+            <span id="source-condition-dot" class="sp-condition-dot sp-dot-pending">&#128270;</span> Condition Report
+          </button>
+          <button id="source-condition-toggle" class="sp-condition-toggle hidden" title="Show/hide report">&#9660;</button>
+        </div>
+        <div id="source-condition-report" class="sp-condition-report hidden"></div>
       </div>
-    </div>
-  </section>
+    </section>
 
-  <!-- Results -->
-  <section id="results-section" class="hidden">
-    <div id="results-summary" class="sp-summary"></div>
-    <div id="results-list" class="sp-results"></div>
-  </section>
+    <!-- Filters -->
+    <section id="filter-section" class="hidden">
+      <div class="sp-filters">
+        <select id="filter-brand" class="sp-filter"><option value="">Any Brand</option></select>
+        <select id="filter-store" class="sp-filter"><option value="">Any Store</option></select>
+        <select id="filter-color" class="sp-filter"><option value="">Any Color</option></select>
+        <select id="filter-model" class="sp-filter"><option value="">Any Model</option></select>
+        <select id="filter-material" class="sp-filter"><option value="">Any Material</option></select>
+        <select id="filter-condition" class="sp-filter"><option value="">Any Condition</option></select>
+        <div class="sp-filter-row">
+          <label class="sp-hint">Sort:</label>
+          <select id="sort-by" class="sp-filter" style="flex:1">
+            <option value="relevance" selected>Relevance</option>
+            <option value="price-asc">Price ↑</option>
+            <option value="price-desc">Price ↓</option>
+            <option value="savings">Savings</option>
+          </select>
+          <label class="sp-hint">Min:</label>
+          <select id="filter-relevance" class="sp-filter" style="width:55px">
+            <option value="0" selected>Any</option>
+            <option value="0.3">30%</option>
+            <option value="0.5">50%</option>
+            <option value="0.7">70%</option>
+            <option value="0.85">85%</option>
+          </select>
+          <a href="#" id="clear-filters" class="sp-clear-filters hidden">Clear</a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Results -->
+    <section id="results-section" class="hidden">
+      <div id="results-summary" class="sp-summary"></div>
+      <div id="results-list" class="sp-results"></div>
+    </section>
+  </div>
+
+  <!-- ========= FAVORITES VIEW ========= -->
+  <div id="favorites-view" class="hidden">
+    <div class="sp-favorites-header">
+      <button id="fav-back-btn" class="sp-back-btn">&#8592; Back</button>
+      <h3>My Favorites</h3>
+      <button id="deep-compare-btn" class="sp-deep-compare-btn" title="Open full comparison">&#9638; Compare All</button>
+    </div>
+    <div class="sp-favorites-filters">
+      <select id="fav-sort" class="sp-filter">
+        <option value="order">Manual Order</option>
+        <option value="price-asc">Price ↑</option>
+        <option value="price-desc">Price ↓</option>
+        <option value="brand">Brand</option>
+      </select>
+      <select id="fav-filter-brand" class="sp-filter"><option value="">Any Brand</option></select>
+      <select id="fav-filter-store" class="sp-filter"><option value="">Any Store</option></select>
+    </div>
+    <div id="fav-count" class="sp-summary">0 favorites</div>
+    <div id="favorites-list" class="sp-results sp-favorites-list"></div>
+  </div>
 
   <footer class="sp-footer">
     <span>Powered by MaisonDeux</span>
