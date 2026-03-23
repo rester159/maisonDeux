@@ -605,6 +605,13 @@ function renderResults() {
     groups[p].push(r);
   }
 
+  console.log(`[MaisonDeux][panel] RENDER: ${filtered.length} filtered, ${allResults.length} total, groups: ${Object.keys(groups).length}`);
+  if (filtered.length > 0) console.log('[MaisonDeux][panel] First:', filtered[0].title?.slice(0,40), 'score:', filtered[0].relevanceScore);
+  if (filtered.length === 0 && allResults.length > 0) {
+    const s = allResults[0];
+    console.warn('[MaisonDeux][panel] ALL FILTERED OUT. Sample:', s?.title?.slice(0,40), 'score:', s?.relevanceScore, '_orig:', s?._originalScore, 'brand:', s?.brand, 'minScore:', minScore);
+  }
+
   $resultsSummary.textContent = searchComplete
     ? `${filtered.length} deal${filtered.length !== 1 ? 's' : ''} found`
     : `${filtered.length} deal${filtered.length !== 1 ? 's' : ''} so far...`;
