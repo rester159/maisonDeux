@@ -438,8 +438,9 @@ function renderResults() {
     });
   }
 
-  // Step 1: Apply minimum relevance (default 30% to filter junk).
-  const minScore = parseFloat(filterEls.relevance.value) || 0.3;
+  // Step 1: Apply minimum relevance.
+  const rawMin = parseFloat(filterEls.relevance.value);
+  const minScore = isNaN(rawMin) ? 0 : rawMin;
   filtered = filtered.filter((r) => (r.relevanceScore ?? r.score ?? 0) >= minScore);
 
   // Step 2: Apply each active filter.
