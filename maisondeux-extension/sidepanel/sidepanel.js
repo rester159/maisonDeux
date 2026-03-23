@@ -1497,12 +1497,15 @@ function populateFavDropdown(id, defaultText, values) {
 
 $deepCompareBtn.addEventListener('click', () => {
   if (!favorites.length) { alert('No favorites to compare.'); return; }
-  // Store data then open comparison tab.
+  // Store data in both compare_data and favorites, then open tab.
   const data = JSON.stringify(favorites);
   console.log('[MaisonDeux][panel] Saving compare data:', favorites.length, 'items');
-  chrome.storage.local.set({ maisondeux_compare_data: data }, () => {
-    console.log('[MaisonDeux][panel] Compare data saved, opening tab');
-    chrome.tabs.create({ url: chrome.runtime.getURL('compare/compare.html') });
+  chrome.storage.local.set({ maisondeux_compare_data: data, maisondeux_favorites: favorites }, () => {
+    // Verify data was saved.
+    chrome.storage.local.get('maisondeux_compare_data', (check) => {
+      console.log('[MaisonDeux][panel] Verified saved:', check.maisondeux_compare_data ? 'yes' : 'no');
+      chrome.tabs.create({ url: chrome.runtime.getURL('compare/compare.html') });
+    });
   });
   track('navigation', 'deep_compare_opened', '', favorites.length);
 });

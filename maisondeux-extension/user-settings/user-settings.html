@@ -187,16 +187,23 @@
     // Save.
     document.getElementById('save-btn').addEventListener('click', () => {
       const enabledPlatforms = [...document.querySelectorAll('input[name="platform-toggle"]:checked')].map(el => el.value);
-      chrome.storage.sync.set({
+      const data = {
         pref_currency: document.getElementById('pref-currency').value,
         pref_relevance: parseInt(document.getElementById('pref-relevance').value),
         pref_auto_brand: document.getElementById('pref-auto-brand').value === 'true',
         pref_max_results: parseInt(document.getElementById('pref-max-results').value),
         enabledPlatforms,
-      }, () => {
-        const $msg = document.getElementById('status-msg');
-        $msg.classList.add('show');
-        setTimeout(() => $msg.classList.remove('show'), 2000);
+      };
+      console.log('Saving user settings:', data);
+      chrome.storage.sync.set(data, () => {
+        if (chrome.runtime.lastError) {
+          console.error('Save failed:', chrome.runtime.lastError);
+          return;
+        }
+        const btn = document.getElementById('save-btn');
+        btn.textContent = '✓ Saved!';
+        btn.style.background = '#2e7d32';
+        setTimeout(() => { btn.textContent = 'Save Settings'; btn.style.background = '#2c2218'; }, 2000);
       });
     });
 
