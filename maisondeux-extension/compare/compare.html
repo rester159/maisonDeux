@@ -9,30 +9,46 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: 'DM Sans', sans-serif; background: #fafaf8; color: #1a1a1a; padding: 24px; }
     h1 { font-size: 22px; font-weight: 700; color: #2c2218; margin-bottom: 4px; }
-    .subtitle { font-size: 13px; color: #888; margin-bottom: 20px; }
+    .subtitle { font-size: 13px; color: #888; }
+    .header-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+    .btn { background: #2c2218; color: #fff; border: none; border-radius: 6px; padding: 8px 16px; font-size: 12px; cursor: pointer; font-weight: 600; font-family: inherit; }
+    .btn:hover { background: #5d4a3a; }
+    .btn-close { background: #c62828; }
+    .btn-close:hover { background: #e53935; }
+
+    /* Filters */
+    .filters-bar { display: flex; gap: 8px; align-items: center; margin-bottom: 16px; flex-wrap: wrap; }
+    .filter-select { padding: 6px 10px; border: 1px solid #d0c8be; border-radius: 6px; font-size: 12px; font-family: inherit; background: #fff; }
+    .filter-label { font-size: 11px; color: #888; font-weight: 600; }
+    .item-count { font-size: 12px; color: #4a3728; font-weight: 600; margin-left: auto; }
+
+    /* Table */
     .grid-wrapper { overflow-x: auto; }
-    table { border-collapse: collapse; width: 100%; min-width: 600px; }
+    table { border-collapse: collapse; width: 100%; min-width: 800px; }
     thead th {
       position: sticky; top: 0; background: #2c2218; color: #f7f3ef;
       padding: 10px 12px; text-align: left; font-size: 11px; font-weight: 600;
       text-transform: uppercase; letter-spacing: 0.5px; white-space: nowrap;
+      cursor: pointer; user-select: none;
     }
-    tbody td {
-      padding: 8px 12px; border-bottom: 1px solid #e8e4de; font-size: 12px;
-      vertical-align: middle;
-    }
+    thead th:hover { background: #3d3027; }
+    thead th .sort-arrow { font-size: 9px; margin-left: 4px; }
+    tbody td { padding: 8px 12px; border-bottom: 1px solid #e8e4de; font-size: 12px; vertical-align: middle; }
+    tbody tr { transition: background 0.15s; }
     tbody tr:hover { background: #f5f2ee; }
+    tbody tr.dragging { opacity: 0.4; background: #e8e4de; }
+    tbody tr.drag-over { border-top: 2px solid #2c2218; }
     .cell-img { width: 50px; height: 50px; border-radius: 4px; object-fit: cover; }
     .cell-brand { font-weight: 700; color: #2c2218; }
     .cell-price { font-weight: 700; font-size: 13px; }
-    .cell-savings { font-size: 11px; font-weight: 600; }
-    .cell-savings.cheaper { color: #2e7d32; }
-    .cell-savings.pricier { color: #c62828; }
-    .chip { display: inline-block; padding: 1px 6px; border-radius: 8px; font-size: 10px; font-weight: 600; margin: 1px; }
+    .cheaper { color: #2e7d32; font-weight: 600; font-size: 11px; }
+    .pricier { color: #c62828; font-size: 11px; }
+    .chip { display: inline-block; padding: 2px 8px; border-radius: 8px; font-size: 10px; font-weight: 600; }
+    .chip-store { background: #f0ebe5; color: #6b5b4e; }
     .chip-color { background: #e3f2fd; color: #1565c0; }
     .chip-material { background: #fff3e0; color: #e65100; }
     .chip-condition { background: #e8f5e9; color: #2e7d32; }
-    .chip-store { background: #f0ebe5; color: #6b5b4e; }
     .grade { font-weight: 700; }
     .grade-good { color: #2e7d32; }
     .grade-ok { color: #f57f17; }
@@ -40,34 +56,58 @@
     .grade-none { color: #ccc; }
     .link { color: #1565c0; text-decoration: none; }
     .link:hover { text-decoration: underline; }
+    .move-btn { background: none; border: 1px solid #d0c8be; border-radius: 3px; cursor: pointer; padding: 1px 4px; font-size: 10px; color: #6b5b4e; }
+    .move-btn:hover { background: #f0ebe5; }
     .empty { text-align: center; padding: 48px; color: #999; font-size: 14px; }
-    .header-bar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
-    .btn { background: #2c2218; color: #fff; border: none; border-radius: 4px; padding: 6px 14px; font-size: 12px; cursor: pointer; font-weight: 600; }
-    .btn:hover { background: #5d4a3a; }
   </style>
 </head>
 <body>
   <div class="header-bar">
     <div>
       <h1>MaisonDeux — Deep Comparison</h1>
-      <p class="subtitle">Side-by-side comparison of all saved favorites</p>
+      <p class="subtitle">Side-by-side comparison of saved favorites</p>
     </div>
-    <button class="btn" onclick="window.print()">&#128424; Print</button>
+    <div class="header-actions">
+      <button class="btn" onclick="window.print()">&#128424; Print</button>
+      <button class="btn btn-close" onclick="window.close()">&#10005; Close</button>
+    </div>
   </div>
+
+  <div class="filters-bar" id="filters-bar">
+    <span class="filter-label">Sort:</span>
+    <select class="filter-select" id="sort-select">
+      <option value="manual">Manual Order</option>
+      <option value="price-asc">Price ↑</option>
+      <option value="price-desc">Price ↓</option>
+      <option value="brand">Brand A-Z</option>
+      <option value="savings">Best Savings</option>
+    </select>
+    <span class="filter-label">Brand:</span>
+    <select class="filter-select" id="filter-brand"><option value="">All</option></select>
+    <span class="filter-label">Store:</span>
+    <select class="filter-select" id="filter-store"><option value="">All</option></select>
+    <span class="filter-label">Color:</span>
+    <select class="filter-select" id="filter-color"><option value="">All</option></select>
+    <span class="filter-label">Condition:</span>
+    <select class="filter-select" id="filter-condition"><option value="">All</option></select>
+    <span class="item-count" id="item-count"></span>
+  </div>
+
   <div class="grid-wrapper">
     <table id="compare-table">
       <thead>
         <tr>
+          <th>↕</th>
           <th></th>
-          <th>Title</th>
-          <th>Brand</th>
-          <th>Model</th>
-          <th>Price</th>
+          <th data-sort="title">Title</th>
+          <th data-sort="brand">Brand</th>
+          <th data-sort="model">Model</th>
+          <th data-sort="price">Price</th>
           <th>vs. Lowest</th>
-          <th>Store</th>
+          <th data-sort="platform">Store</th>
           <th>Color</th>
           <th>Material</th>
-          <th>Condition</th>
+          <th data-sort="condition">Condition</th>
           <th>AI Grade</th>
           <th>Link</th>
         </tr>
@@ -84,42 +124,109 @@
       shopgoodwill:'ShopGoodwill', 'google-shopping':'Google Shopping',
     };
     const esc = (s) => { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; };
+    const parsePrice = (v) => parseFloat(String(v||'').replace(/[^0-9.]/g,'')) || 0;
 
+    let items = [];
+    let sortCol = null;
+    let sortDir = 1;
+
+    // Load data.
     chrome.storage.local.get(['maisondeux_compare_data', 'maisondeux_favorites'], (data) => {
-      let items = [];
-      // Try compare data first, fall back to favorites.
-      try { items = JSON.parse(data.maisondeux_compare_data || '[]'); } catch(e) {}
-      if (!items.length && data.maisondeux_favorites) {
-        items = data.maisondeux_favorites;
-      }
-      console.log('[MaisonDeux][compare] Loaded', items.length, 'items');
+      try { items = JSON.parse(data.maisondeux_compare_data || '[]'); } catch {}
+      if (!items.length && data.maisondeux_favorites) items = data.maisondeux_favorites;
+      console.log('[Compare] Loaded', items.length, 'items');
 
       if (!items.length) {
         document.getElementById('empty-msg').classList.remove('hidden');
-        document.getElementById('compare-table').classList.add('hidden');
+        document.getElementById('compare-table').style.display = 'none';
+        document.getElementById('filters-bar').style.display = 'none';
         return;
       }
 
-      // Find lowest price.
-      const prices = items.map(i => parseFloat(String(i.price||'').replace(/[^0-9.]/g,''))||0).filter(p=>p>0);
-      const lowestPrice = prices.length ? Math.min(...prices) : 0;
+      populateFilters();
+      render();
+    });
 
+    function populateFilters() {
+      const brands = new Set(), stores = new Set(), colors = new Set(), conditions = new Set();
+      items.forEach(i => {
+        if (i.brand) brands.add(i.brand);
+        if (i.platform) stores.add(STORE_NAMES[i.platform] || i.platform);
+        if (i.color) colors.add(i.color);
+        if (i.condition) conditions.add(i.condition);
+      });
+      fillSelect('filter-brand', brands);
+      fillSelect('filter-store', stores);
+      fillSelect('filter-color', colors);
+      fillSelect('filter-condition', conditions);
+    }
+
+    function fillSelect(id, values) {
+      const el = document.getElementById(id);
+      const cur = el.value;
+      const first = el.querySelector('option[value=""]');
+      el.innerHTML = '';
+      if (first) el.appendChild(first);
+      [...values].sort().forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v; opt.textContent = v;
+        if (v === cur) opt.selected = true;
+        el.appendChild(opt);
+      });
+    }
+
+    function getFiltered() {
+      let list = [...items];
+      const brandF = document.getElementById('filter-brand').value;
+      const storeF = document.getElementById('filter-store').value;
+      const colorF = document.getElementById('filter-color').value;
+      const condF = document.getElementById('filter-condition').value;
+      if (brandF) list = list.filter(i => i.brand === brandF);
+      if (storeF) list = list.filter(i => (STORE_NAMES[i.platform]||i.platform) === storeF);
+      if (colorF) list = list.filter(i => i.color === colorF);
+      if (condF) list = list.filter(i => i.condition === condF);
+
+      const sortMode = document.getElementById('sort-select').value;
+      switch (sortMode) {
+        case 'price-asc': list.sort((a,b) => parsePrice(a.price) - parsePrice(b.price)); break;
+        case 'price-desc': list.sort((a,b) => parsePrice(b.price) - parsePrice(a.price)); break;
+        case 'brand': list.sort((a,b) => (a.brand||'').localeCompare(b.brand||'')); break;
+        case 'savings': {
+          const lowest = Math.min(...list.map(i=>parsePrice(i.price)).filter(p=>p>0));
+          list.sort((a,b) => parsePrice(a.price) - parsePrice(b.price));
+          break;
+        }
+      }
+      return list;
+    }
+
+    function render() {
+      const list = getFiltered();
+      const prices = list.map(i => parsePrice(i.price)).filter(p => p > 0);
+      const lowest = prices.length ? Math.min(...prices) : 0;
+
+      document.getElementById('item-count').textContent = `${list.length} item${list.length !== 1 ? 's' : ''}`;
       const tbody = document.getElementById('compare-body');
+      tbody.innerHTML = '';
 
-      for (const item of items) {
-        const price = parseFloat(String(item.price||'').replace(/[^0-9.]/g,''))||0;
-        const delta = price > 0 && lowestPrice > 0 ? price - lowestPrice : 0;
+      list.forEach((item, idx) => {
+        const price = parsePrice(item.price);
+        const delta = price > 0 && lowest > 0 ? price - lowest : 0;
         const store = STORE_NAMES[item.platform] || item.platform || '';
         const cr = item._conditionReport;
         const aiGrade = cr?.overallGrade || '';
         const gradeClass = ['New','Excellent'].includes(aiGrade) ? 'grade-good' : ['Very Good','Good'].includes(aiGrade) ? 'grade-ok' : aiGrade ? 'grade-bad' : 'grade-none';
 
         let savingsHtml = '';
-        if (delta === 0 && price > 0) savingsHtml = '<span class="cell-savings cheaper">★ Lowest</span>';
-        else if (delta > 0) savingsHtml = `<span class="cell-savings pricier">+$${Math.round(delta).toLocaleString()}</span>`;
+        if (delta === 0 && price > 0) savingsHtml = '<span class="cheaper">★ Lowest</span>';
+        else if (delta > 0) savingsHtml = `<span class="pricier">+$${Math.round(delta).toLocaleString()}</span>`;
 
         const tr = document.createElement('tr');
+        tr.draggable = true;
+        tr.dataset.idx = String(items.indexOf(item));
+
         tr.innerHTML = `
+          <td><button class="move-btn" data-dir="-1">▲</button><button class="move-btn" data-dir="1">▼</button></td>
           <td>${item.img ? `<img class="cell-img" src="${esc(item.img)}" />` : ''}</td>
           <td>${esc(item.title)}</td>
           <td class="cell-brand">${esc(item.brand)}</td>
@@ -133,9 +240,57 @@
           <td><span class="grade ${gradeClass}">${aiGrade || '—'}</span></td>
           <td>${item.link ? `<a class="link" href="${esc(item.link)}" target="_blank">View →</a>` : ''}</td>
         `;
+
+        // Move buttons.
+        tr.querySelectorAll('.move-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const i = items.indexOf(item);
+            const dir = parseInt(btn.dataset.dir);
+            const j = i + dir;
+            if (j < 0 || j >= items.length) return;
+            [items[i], items[j]] = [items[j], items[i]];
+            saveAndRender();
+          });
+        });
+
+        // Drag and drop.
+        tr.addEventListener('dragstart', (e) => {
+          e.dataTransfer.effectAllowed = 'move';
+          e.dataTransfer.setData('text/plain', tr.dataset.idx);
+          tr.classList.add('dragging');
+        });
+        tr.addEventListener('dragend', () => tr.classList.remove('dragging'));
+        tr.addEventListener('dragover', (e) => { e.preventDefault(); tr.classList.add('drag-over'); });
+        tr.addEventListener('dragleave', () => tr.classList.remove('drag-over'));
+        tr.addEventListener('drop', (e) => {
+          e.preventDefault();
+          tr.classList.remove('drag-over');
+          const fromIdx = parseInt(e.dataTransfer.getData('text/plain'));
+          const toIdx = items.indexOf(item);
+          if (fromIdx === toIdx) return;
+          const [moved] = items.splice(fromIdx, 1);
+          items.splice(toIdx, 0, moved);
+          saveAndRender();
+        });
+
         tbody.appendChild(tr);
-      }
-    });
+      });
+    }
+
+    function saveAndRender() {
+      chrome.storage.local.set({
+        maisondeux_compare_data: JSON.stringify(items),
+        maisondeux_favorites: items,
+      });
+      render();
+    }
+
+    // Filter/sort change handlers.
+    document.getElementById('sort-select').addEventListener('change', render);
+    document.getElementById('filter-brand').addEventListener('change', render);
+    document.getElementById('filter-store').addEventListener('change', render);
+    document.getElementById('filter-color').addEventListener('change', render);
+    document.getElementById('filter-condition').addEventListener('change', render);
   </script>
 </body>
 </html>
