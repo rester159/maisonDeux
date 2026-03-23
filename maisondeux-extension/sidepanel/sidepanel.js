@@ -502,40 +502,44 @@ function renderResults() {
   });
   $filterSection.classList.toggle('hidden', !anyFilterVisible);
 
-  // Auto-set filters on first results if not already done.
+  // Auto-set filters after dropdowns are populated.
   if (!filtersAutoSet && currentProductAttrs && allResults.length > 0) {
-    filtersAutoSet = true;
+    // Check if dropdowns actually have options now.
+    const brandOpts = filterEls.brand ? [...filterEls.brand.options].filter(o => o.value) : [];
 
-    // Try to match each filter against available options.
-    function autoSet(el, targetVal) {
-      if (!el || !targetVal) return;
-      const target = normalizeText(targetVal);
-      for (const opt of el.options) {
-        if (normalizeText(opt.value) === target || normalizeText(opt.textContent) === target) {
-          el.value = opt.value;
-          return;
+    if (brandOpts.length > 0) {
+      filtersAutoSet = true;
+
+      function autoSet(el, targetVal) {
+        if (!el || !targetVal) return false;
+        const target = normalizeText(targetVal);
+        for (const opt of el.options) {
+          if (!opt.value) continue;
+          const optNorm = normalizeText(opt.value);
+          const optTextNorm = normalizeText(opt.textContent);
+          // Match: exact, contains, or contained-by.
+          if (optNorm === target || optTextNorm === target || optNorm.includes(target) || target.includes(optNorm)) {
+            el.value = opt.value;
+            return true;
+          }
         }
+        return false;
       }
+
+      console.log('[MaisonDeux][panel] Dropdown options available:', brandOpts.map(o => o.value).join(', '));
+      console.log('[MaisonDeux][panel] Auto-setting from:', JSON.stringify(currentProductAttrs));
+
+      autoSet(filterEls.brand, currentProductAttrs.brand);
+      autoSet(filterEls.color, currentProductAttrs.color);
+      autoSet(filterEls.model, currentProductAttrs.model);
+      autoSet(filterEls.material, currentProductAttrs.material);
+
+      console.log('[MaisonDeux][panel] After auto-set — brand:', filterEls.brand?.value, 'model:', filterEls.model?.value);
+
+      // Re-filter with auto-set values.
+      updateFilterStyles();
+      return renderResults();
     }
-
-    // Debug: log what options are available.
-    for (const key of filterKeys) {
-      const el = filterEls[key];
-      if (el) {
-        const opts = [...el.options].map(o => o.value).filter(v => v);
-        if (opts.length) console.log(`[MaisonDeux][panel] Filter ${key} options:`, opts.join(', '));
-      }
-    }
-    console.log('[MaisonDeux][panel] Trying to auto-set:', JSON.stringify(currentProductAttrs));
-
-    autoSet(filterEls.brand, currentProductAttrs.brand);
-    autoSet(filterEls.color, currentProductAttrs.color);
-    autoSet(filterEls.model, currentProductAttrs.model);
-    autoSet(filterEls.material, currentProductAttrs.material);
-    console.log('[MaisonDeux][panel] After auto-set — brand:', filterEls.brand?.value, 'model:', filterEls.model?.value);
-
-    // Re-filter with auto-set values.
-    return renderResults();
   }
 
   updateFilterStyles();
