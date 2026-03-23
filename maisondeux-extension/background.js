@@ -106,6 +106,19 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
     }
 
+    case 'REINJECT_CONTENT_SCRIPT': {
+      chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+        const tabId = tabs[0]?.id;
+        if (tabId) {
+          chrome.scripting.executeScript({
+            target: { tabId },
+            files: ['content-script.js'],
+          }).catch(() => {});
+        }
+      });
+      return false;
+    }
+
     case 'SET_ACTIVE':
       isActive = payload.active;
       chrome.storage.local.set({ maisondeux_active: isActive });
