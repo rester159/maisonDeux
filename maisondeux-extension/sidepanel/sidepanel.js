@@ -284,7 +284,6 @@ function showProduct(product) {
   if (category) allPills.push({ label: category, type: 'category' });
 
   // Details line: brand · price · store.
-  const $details = document.getElementById('product-details');
   const currSym = (product.currency === 'EUR') ? '€' : (product.currency === 'GBP') ? '£' : (product.currency === 'CHF') ? 'CHF ' : '$';
   const detailParts = [];
   if (brand) detailParts.push(brand);
